@@ -1,0 +1,61 @@
+# Navigation
+chat: "Chat"
+docs: "Documents"
+settings: "Settings"
+
+# Chat
+add_session: "+ New Session"
+new_session: "New Session"
+
+# General Settings
+general_settings: "General Settings"
+default_models: "Default Models"
+model_provider: "Model Provider"
+Internationalization: "Internationalization"
+language: "Language"
+
+# Default Models
+default_chat_model: "Chat Model"
+default_chat_model_desc: "Default Chat Model"
+default_agent_model: "Agent Model"
+default_agent_model_desc: "Default Main Agent Model"
+default_summary_model: "Summary Model"
+default_summary_model_desc: "Model used for topic summarization, recommended to use a non-thinking model"
+default_translation_model: "Translation Model"
+default_translation_model_desc: "Model used for translation services, recommended to use a non-thinking model"
+default_model_config_error: "Model Configuration Error"
+default_model_config_error_desc: "Model configuration error, caused by: "
+
+# Model Services
+add_provider: "Add Provider"
+add_model: "Add Model"
+edit_model: "Edit Model"
+api_url: "API URL"
+api_key: "API KEY"
+api_type: "API Type"
+models: "Models"
+model_id: "Model ID"
+model_id_desc: "Model Identifier ID"
+model_name: "Model Name"
+model_name_desc: "Model Display Name"
+model_ability: "Model Ability"
+model_vision: "Vision"
+model_embed: "Embed"
+model_reranker: "Reranker"
+add_model_warn_unique: "Model ID or Model Name must be unique!"
+add_model_warn_none: "Model ID or Model Name cannot be empty!"
+edit_model_warn_unique: "Model Name must be unique!"
+edit_model_warn_none: "Model Name cannot be empty!"
+
+# Common UI Elements
+save: "Save"
+cancel: "Cancel"
+confirm: "Confirm"
+copy: "Copy"
+retry: "Retry"
+reasoning: "Reasoning"
+reason_finish: "Finish Reasoning"
+request_was_aborted: "Request was Aborted"
+request_was_aborted_desc: "User manual pause"
+retry_failed: "Retry Failed"
+retry_failed_desc: "Retry cancelled: failed to delete the last turn"
