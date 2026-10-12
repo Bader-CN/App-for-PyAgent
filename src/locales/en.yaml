@@ -25,6 +25,8 @@ default_translation_model: "Translation Model"
 default_translation_model_desc: "Model used for translation services, recommended to use a non-thinking model"
 default_model_config_error: "Model Configuration Error"
 default_model_config_error_desc: "Model configuration error, caused by: "
+default_model_config_none: "Need to configure the model"
+default_model_config_none_desc: "The model list is empty, please configure the model first"
 
 # Model Services
 add_provider: "Add Provider"

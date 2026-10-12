@@ -25,6 +25,8 @@ default_translation_model: "翻译模型"
 default_translation_model_desc: "翻译服务所使用的模型, 建议使用非思考模型"
 default_model_config_error: "模型配置错误"
 default_model_config_error_desc: "模型配置错误, 原因为: "
+default_model_config_none: "需要配置模型"
+default_model_config_none_desc: "模型列表为空, 请先配置模型"
 
 # 模型服务
 add_provider: "+ 添加"

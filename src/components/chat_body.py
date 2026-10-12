@@ -4,6 +4,7 @@ import asyncio
 import flet as ft
 from typing import List, Dict, Any
 from src.endpoints import EndPoints
+from src.components.common import AlertCommon
 from src.components.common import MessageCommon
 from src.utils.logging import logger
 from langchain.messages import SystemMessage, HumanMessage, AIMessage, RemoveMessage
@@ -478,7 +479,7 @@ class ChatBody:
         try:
             updates = [RemoveMessage(id=i) for i in obsolete_ids]
             updates.append(ai_msg)
-            await EndPoints.runtime["lc_agents"].chat_agent.aupdate_state(
+            await EndPoints.runtime["lc_agents"].agent_chat.aupdate_state(
                 config,
                 {"messages": updates},
                 # as_node 必须显式指定 "model"
@@ -550,29 +551,30 @@ class ChatBody:
             ]
 
         # 调用模型并总结标题
-        if EndPoints.runtime["lc_agents"].summary_agent is None:
+        if EndPoints.runtime["lc_agents"].agent_summary is None:
             EndPoints.runtime["lc_agents"].agent_summary_update()
-        response = EndPoints.runtime["lc_agents"].summary_agent.invoke(summary_msgs)
-        summary_title = str(response.text)
 
-        # 渲染界面
-        sessions = EndPoints.chat["chat_list"].current.controls
-        for session in sessions:
-            if session.data.get("session_id") == chat_session_id:
-                session.title = ft.Text(summary_title)
-                session.data["title"] = summary_title
-                if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                    EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
-                break
-        EndPoints.root["page"].update()
-
-        # 保持数据 (sessions 数据类型为 list)
-        sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
-        for idx, session_dict in enumerate(sessions):
-            if session_dict.get("session_id") == chat_session_id:
-                sessions[idx]["title"] = summary_title
-                EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
-                break
+        # 确保话题总结模型不为 None
+        if EndPoints.runtime["lc_agents"].agent_summary is not None:
+            response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
+            summary_title = str(response.text)
+            # 渲染界面
+            sessions = EndPoints.chat["chat_list"].current.controls
+            for session in sessions:
+                if session.data.get("session_id") == chat_session_id:
+                    session.title = ft.Text(summary_title)
+                    session.data["title"] = summary_title
+                    if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
+                        EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
+                    break
+            EndPoints.root["page"].update()
+            # 保持数据 (sessions 数据类型为 list)
+            sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
+            for idx, session_dict in enumerate(sessions):
+                if session_dict.get("session_id") == chat_session_id:
+                    sessions[idx]["title"] = summary_title
+                    EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
+                    break
 
     @classmethod
     async def msg_update_stream(cls, user_msg):
@@ -598,21 +600,26 @@ class ChatBody:
         round_msgs = EndPoints.tmp_msgs[chat_session_id]
 
         # 获取 Agent 对象
-        ######################################################
-        # 此部分代码还处于测试阶段, 未来可能还需要调整
-        if EndPoints.runtime["lc_agents"].chat_agent is None:
-            logger.warning("Loading Chat Agent...")
-            EndPoints.runtime["lc_agents"].chat_agent_update()
-            logger.warning("Loading Chat Agent Finish.")
-        agent = EndPoints.runtime["lc_agents"].chat_agent
-        ######################################################
+        if EndPoints.runtime["lc_agents"].agent_chat is None:
+            EndPoints.runtime["lc_agents"].agent_chat_update()
+        if EndPoints.runtime["lc_agents"].agent_chat is None:
+            AlertCommon.alert_model_config_none()
+            return
+        agent = EndPoints.runtime["lc_agents"].agent_chat
 
         # Agent 异步调用
-        astream = await agent.astream_events(
-            {"messages": [human_msg,],}, 
-            version="v3", 
-            config={"configurable": {"thread_id": chat_session_id}},
-        )
+        try:
+            astream = await agent.astream_events(
+                {"messages": [human_msg,],}, 
+                version="v3", 
+                config={"configurable": {"thread_id": chat_session_id}},
+            )
+        # 模型没有配置时触发
+        except Exception as e:
+            AlertCommon.alert_model_config_error(message=str(e))
+            EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.SEND
+            EndPoints.root["page"].update()
+            return
                     
         async def consume_messages():
             """
@@ -1103,11 +1110,11 @@ class ChatBody:
             # 删库失败的详情 (None = 成功)
             errmsg = None
             # 注意: 写入入口必须有 agent
-            if lc_agents.chat_agent is None:
+            if lc_agents.agent_chat is None:
                 logger.warning("Loading Chat Agent...")
-                await lc_agents.chat_agent_update_async()
+                await lc_agents.agent_chat_update_async()
                 logger.warning("Loading Chat Agent Finish.")
-            if lc_agents.chat_agent is None:
+            if lc_agents.agent_chat is None:
                 # 建不出来: 没配默认模型 / 模型配置有问题
                 errmsg = EndPoints.runtime["app_util_lang"].translate(key="retry_failed_desc")
             else:
@@ -1115,7 +1122,7 @@ class ChatBody:
                 try:
                     # as_node 必须显式传 (理由同 msg_aborted_save):
                     # 推断依赖 checkpoint 的 versions_seen, model/tools 在同一步都更新过就无法判定
-                    await lc_agents.chat_agent.aupdate_state(
+                    await lc_agents.agent_chat.aupdate_state(
                         config,
                         {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *keep]},
                         as_node="model",

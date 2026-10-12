@@ -10,7 +10,6 @@ from langgraph.graph.message import MessagesState
 from langchain.agents import create_agent
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
-# from langchain.mcp import MCPAdapter
 
 from src.endpoints import EndPoints
 from src.cores.lc_tools import LC_Tools
@@ -22,89 +21,40 @@ class LCAgents:
     LangChain/DeepAgents 系智能体封装类 (LC=LangChain)
     包含多个智能体, 用于不同场景
     """
-    # Anysearch MCP 端点 (临时测试: 硬编码, 匿名访问无需 API key)
-    # -> 目的是验证「模型能多步调用工具」, 测试完后本常量与 mcp_tools_load() 一并删除
-    MCP_ANYSEARCH_URL = "https://api.anysearch.com/mcp"
-
     def __init__(self):
-        # 模型实例
-        self.chat_agent = None
-        self.main_agent = None
-        self.summary_agent = None
-        self.translation_agent = None
+        # App 运行时的根目录
+        self.app_path_root = EndPoints.runtime["app_path_root"]
+        # checkpointer 对象
+        self.checkpointer = AsyncSqliteSaver(
+            conn=aiosqlite.connect(os.path.abspath(os.path.join(self.app_path_root, "storage/data/checkpointer.db")))
+        )
+
+        # 智能体实例
+        self.agent_chat = None
+        self.agent_main = None
+        self.agent_summary = None
+        self.agent_translation = None
+
+        # 标记位
+        # agent_chat 是否正在加载
+        # 供调用方在发起加载前判断, 避免并发构建
+        self.agent_chat_loading = False
 
         # 用于读取记录的状态图
         self.state_graph_chat = None
         self.state_graph_agent = None
 
-        # 自定义参数
+        # 自定义请求体参数
         self.extra_body_chat = {}
         self.extra_body_agent = {}
 
-        # 标记位: chat_agent 是否正在加载
-        # -> 供调用方在发起加载前判断, 避免并发构建 (后完成者会覆盖先完成者)
-        self.chat_agent_loading = False
-
-        # # MCP 工具 (临时测试)
-        # # -> 为空列表时, 等价于"没挂 MCP", 对原有流程零影响
-        # self.mcp_tools = []
-        # # 是否已"尝试过"加载 (失败也算), 避免每次建 agent 都白等一次网络超时
-        # self.mcp_tools_loaded = False
-        # # 防止并发首次加载时重复建连
-        # self.mcp_load_lock = asyncio.Lock()
-
-        # App 运行时的根目录
-        self.app_path_root = EndPoints.runtime["app_path_root"]
-        # checkpointer 对象
-        self.checkpointer = AsyncSqliteSaver(
-            conn=aiosqlite.connect(
-                os.path.abspath(os.path.join(self.app_path_root, "storage/data/checkpointer.db")), 
-                # check_same_thread=False
-            )
-        )
-
-        # 初始化部分
+        # 更新额外的请求体参数
         self.extra_body_update_reasoning_level(agent_type="chat")
         self.extra_body_update_reasoning_level(agent_type="agent")
 
-    # async def mcp_tools_load(self):
-    #     """
-    #     加载 Anysearch MCP 工具 (临时测试)
-
-    #     为什么必须有这一步:
-    #     - create_agent 的 tools 是"建图期"就固定的 (创建时切成 ToolNode 的入参),
-    #       运行时没有任何办法再把工具塞进去
-    #     - 所以联网工具只能在这里先取回来, chat_agent_update() 才能一起建图
-
-    #     失败处理: 只记 warning 并保持空列表 -> 联网功能不可用, 但聊天流程照常
-
-    #     注意:
-    #     - 必须在事件循环线程上调用
-    #       fastmcp 的连接是 asyncio.create_task 起的, 会和创建它的 loop 绑定;
-    #       若丢进 asyncio.to_thread 的 worker 线程里跑, 就变成跨 loop 使用,
-    #       表现为后续调用工具时报 "attached to a different loop"
-    #     """
-    #     if self.mcp_tools_loaded:
-    #         return
-    #     async with self.mcp_load_lock:
-    #         # 二次判重: 锁外那次判重可能撞上另一个正在加载的协程
-    #         if self.mcp_tools_loaded:
-    #             return
-    #         try:
-    #             # list_tools 内部自己建连 -> 取完即断开;
-    #             # 返回的工具自己持有 client, 每次调用会重新建连, 故 adapter 不必保活
-    #             adapter = MCPAdapter(self.MCP_ANYSEARCH_URL)
-    #             self.mcp_tools = await adapter.list_tools()
-    #             logger.debug(f"MCP tools loaded: {[t.name for t in self.mcp_tools]}")
-    #         except Exception as e:
-    #             logger.warning(f"Failed to load MCP tools, network features disabled. Reason: {e}")
-    #         finally:
-    #             # 失败也置位: 否则每次重建 agent 都要再等一次网络超时
-    #             self.mcp_tools_loaded = True
-
-    def chat_agent_update(self, web_search=True):
+    def agent_chat_update(self, web_search=True):
         """
-        更新 Chat Agent 智能体实例
+        更新 "Chat Agent" 实例
 
         Args:
         - web_search:   布尔值, 默认启用网页搜索工具
@@ -112,16 +62,15 @@ class LCAgents:
         # 当前完整的模型名: <provider_name>/<model_name>
         full_model_name = EndPoints.runtime["app_util_profile"].default_model(default_type="chat_model")
         if full_model_name is None:
-            logger.warning("Default chat model not set, will skip chat agent initialization.")
+            self.agent_chat = None
+            logger.error("default chat agent model not set!")
         else:
             try:
-                logger.warning("Loading Chat Agent...")
+                logger.info("loading chat agent...")
                 # 判断加载哪些工具
                 tools = [LC_Tools.get_currently_datetime_and_weekday]
                 if web_search:
                     tools.extend([LC_Tools.http_request_get_with_keyword, LC_Tools.http_request_get_with_url])
-                logger.warning(tools)
-
                 # 加载模型
                 provider_name, model_name = full_model_name.split("/", 1)
                 llm_model = init_chat_model(
@@ -131,18 +80,18 @@ class LCAgents:
                     base_url=EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name),
                     extra_body=self.extra_body_chat if self.extra_body_chat else None,
                 )
-                self.chat_agent = create_agent(
+                self.agent_chat = create_agent(
                     model=llm_model,
                     checkpointer=self.checkpointer,
                     tools=tools,
                 )
-                logger.warning("Loading Chat Agent Finish.")
+                logger.success("loading chat agent finish.")
             except Exception as e:
-                logger.warning(f"Default chat model incomplete settings, will skip chat agent initialization. Currently issue is: {e}")
-                self.chat_agent = None
+                self.agent_chat = None
+                logger.error(f"loading chat agent failed. issue is: {e}")
                 return str(e)
 
-    async def chat_agent_update_async(self, web_search=True):
+    async def agent_chat_update_async(self, web_search=True):
         """
         以异步的方式更新 Chat Agent 智能体实例
         -> 重活交给 worker 线程, 不占 event loop, 加速界面渲染
@@ -153,13 +102,38 @@ class LCAgents:
         Args:
         - web_search:   布尔值, 默认启用网页搜索工具
         """
-        self.chat_agent_loading = True
+        self.agent_chat_loading = True
         try:
-            # # MCP 工具必须在建图前拿到, 且只能在 event loop 上取 (见 mcp_tools_load 的 Note)
-            # await self.mcp_tools_load()
-            return await asyncio.to_thread(self.chat_agent_update, web_search=web_search)
+            return await asyncio.to_thread(self.agent_chat_update, web_search=web_search)
         finally:
-            self.chat_agent_loading = False
+            self.agent_chat_loading = False
+
+    def agent_summary_update(self):
+        """
+        更新汇总模型智能体
+        """
+        # 当前完整的模型名: <provider_name>/<model_name>
+        full_model_name = EndPoints.runtime["app_util_profile"].default_model(default_type="summary_model")
+        if full_model_name is None:
+            logger.warning("default summary agent model not set!")
+            self.agent_summary = None
+        else:
+            try:
+                logger.info("loading summary agent...")
+                # 加载模型
+                provider_name, model_name = full_model_name.split("/", 1)
+                self.agent_summary = init_chat_model(
+                    model_provider=EndPoints.runtime["app_util_conf"].provider_api_type(provider_name=provider_name),
+                    model=model_name,
+                    api_key=EndPoints.runtime["app_util_conf"].provider_api_key(provider_name=provider_name),
+                    base_url=EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name),
+                    extra_body={"reasoning_effort": "none", "allowed_openai_params": "reasoning_effort"},
+                )
+                logger.success("loading summary agent finish.")
+            except Exception as e:
+                logger.warning(f"loading summary agent failed. issue is: {e}")
+                self.agent_summary = None
+                return str(e)
 
     def state_graph_chat_update(self):
             """
@@ -200,23 +174,6 @@ class LCAgents:
          """
          pass
 
-    async def session_delete(self, session_id: str):
-            """
-            删除在 checkpointer 里的指定会话数据
-
-            Note:
-            # https://docs.langchain.com/oss/python/langgraph/add-memory#delete-all-checkpoints-for-a-thread
-            # https://docs.langchain.com/oss/python/langgraph/add-memory#database-management
-            # https://reference.langchain.com/python/langgraph.checkpoint.sqlite/aio/AsyncSqliteSaver/setup
-            不要直接去调用 self.checkpointer.adelete_thread(config)
-            -> 因为如果 checkpointer 没有连接过, 则在执行 adelete_thread(config) 时会抛出无连接的错误
-            -> 必须先 await setup(): 它是 AsyncSqliteSaver 里唯一会 _ensure_connected 的方法, 且幂等
-               -> 内部 `if self.is_setup: return` 守卫), 已连上时重复调用零成本
-            -> setup() 与 adelete_thread 各自取放同一个 self.lock → 顺序 await 不会死锁
-            """
-            await self.checkpointer.setup()
-            await self.checkpointer.adelete_thread(session_id)
-
     def extra_body_update_reasoning_level(self, agent_type: str):
         """
         更新 self.extra_body_chat / self.extra_body_agent 中的思考强度
@@ -254,28 +211,19 @@ class LCAgents:
             elif reason_lv == "High":
                 self.extra_body_agent["reasoning_effort"] = "high"
 
-    def agent_summary_update(self):
+    async def session_delete(self, session_id: str):
         """
-        更新汇总模型智能体
+        删除在 checkpointer 里的指定会话数据
+
+        Note:
+        # https://docs.langchain.com/oss/python/langgraph/add-memory#delete-all-checkpoints-for-a-thread
+        # https://docs.langchain.com/oss/python/langgraph/add-memory#database-management
+        # https://reference.langchain.com/python/langgraph.checkpoint.sqlite/aio/AsyncSqliteSaver/setup
+        不要直接去调用 self.checkpointer.adelete_thread(config)
+        -> 因为如果 checkpointer 没有连接过, 则在执行 adelete_thread(config) 时会抛出无连接的错误
+        -> 必须先 await setup(): 它是 AsyncSqliteSaver 里唯一会 _ensure_connected 的方法, 且幂等
+            -> 内部 `if self.is_setup: return` 守卫), 已连上时重复调用零成本
+        -> setup() 与 adelete_thread 各自取放同一个 self.lock → 顺序 await 不会死锁
         """
-        # 当前完整的模型名: <provider_name>/<model_name>
-        full_model_name = EndPoints.runtime["app_util_profile"].default_model(default_type="summary_model")
-        if full_model_name is None:
-            logger.warning("Default chat model not set, will skip chat agent initialization.")
-        else:
-            try:
-                logger.warning("Loading Summary Agent...")
-                # 加载模型
-                provider_name, model_name = full_model_name.split("/", 1)
-                self.summary_agent = init_chat_model(
-                    model_provider=EndPoints.runtime["app_util_conf"].provider_api_type(provider_name=provider_name),
-                    model=model_name,
-                    api_key=EndPoints.runtime["app_util_conf"].provider_api_key(provider_name=provider_name),
-                    base_url=EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name),
-                    extra_body={"reasoning_effort": "none", "allowed_openai_params": "reasoning_effort"},
-                )
-                logger.warning("Loading Summary Agent Finish.")
-            except Exception as e:
-                logger.warning(f"Default summary model incomplete settings, will skip chat agent initialization. Currently issue is: {e}")
-                self.summary_agent = None
-                return str(e)
+        await self.checkpointer.setup()
+        await self.checkpointer.adelete_thread(session_id)

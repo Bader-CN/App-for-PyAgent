@@ -32,6 +32,18 @@ class AlertCommon:
         )
         EndPoints.root["page"].show_dialog(blk_alert)
 
+    @classmethod
+    def alert_model_config_none(cls):
+        """
+        模型列表为空时提示需要先配置模型
+        """
+        blk_alert = ft.AlertDialog(
+            title=ft.Text(EndPoints.runtime["app_util_lang"].translate(key="default_model_config_none")),
+            content=ft.Text(EndPoints.runtime["app_util_lang"].translate(key="default_model_config_none_desc")),
+            actions=[ft.TextButton(EndPoints.runtime["app_util_lang"].translate(key="confirm"), on_click=lambda e: EndPoints.root["page"].pop_dialog())],
+            open=True,
+        )
+        EndPoints.root["page"].show_dialog(blk_alert)
 
 class MessageCommon:
     """

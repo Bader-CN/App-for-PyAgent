@@ -73,7 +73,7 @@ class ChatInput:
             dense=True,
             content_padding=0,
             text_size=13,
-            border=ft.InputBorder.NONE,
+            border=ft.NoInputBorder(),
             ref=EndPoints.chat["chat_input_textfield"],
         )
         return input_textfield
@@ -331,7 +331,7 @@ class ChatInput:
         切换聊天模型 (同时也会同步修改默认的聊天模型)
 
         Note:
-        本回调是异步函数, 原因见 LCAgents.chat_agent_update_async 的 Note:
+        本回调是异步函数, 原因见 LCAgents.agent_chat_update_async 的 Note:
         同步回调会独占 event loop, 而 page.update() 只是把补丁入队
         -> 补丁要等回调返回才发得出去, 界面看起来 "渲染很慢"
         """
@@ -347,7 +347,7 @@ class ChatInput:
         # -> 会出现 "界面显示 B, 实际 agent 是 A" 的静默错数据 (比崩溃更难查)
         # 同类风格参考 callback_send_user_msg 里 "已点击暂停但未停止" 的处理
         lc_agents = EndPoints.runtime["lc_agents"]
-        if lc_agents.chat_agent_loading:
+        if lc_agents.agent_chat_loading:
             logger.warning(f"Chat agent is loading, ignore this click. default_model is {default_model}.")
             return
         
@@ -360,7 +360,7 @@ class ChatInput:
         
         # 继续加载模型: 用 await 而非 "线程 + join"
         # -> await 期间 loop 空闲, 界面不冻结; join 会阻塞 loop, 等于没改
-        err_msg = await lc_agents.chat_agent_update_async()
+        err_msg = await lc_agents.agent_chat_update_async()
         if err_msg:
             AlertCommon.alert_model_config_error(message=err_msg)
             EndPoints.runtime["app_util_profile"].default_model_set(default_type=default_type, default_model=None)
@@ -395,10 +395,10 @@ class ChatInput:
             EndPoints.runtime["lc_agents"].extra_body_update_reasoning_level(agent_type="chat")
 
             # 重新加载模型
-            while lc_agents.chat_agent_loading:
+            while lc_agents.agent_chat_loading:
                 logger.warning(f"Chat model loading, retrying...")
                 await asyncio.sleep(0.2)             
-            err_msg = await lc_agents.chat_agent_update_async()
+            err_msg = await lc_agents.agent_chat_update_async()
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)
 
@@ -413,13 +413,13 @@ class ChatInput:
         # 关闭 Web 搜索
         if e.control.icon_color == ft.Colors.BLUE:
             e.control.icon_color = None
-            err_msg = await lc_agents.chat_agent_update_async(web_search=False)
+            err_msg = await lc_agents.agent_chat_update_async(web_search=False)
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)
         # 开启 Web 搜索
         else:
             e.control.icon_color = ft.Colors.BLUE
-            err_msg = await lc_agents.chat_agent_update_async(web_search=True)
+            err_msg = await lc_agents.agent_chat_update_async(web_search=True)
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)
 

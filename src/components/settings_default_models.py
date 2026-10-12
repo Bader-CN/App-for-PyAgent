@@ -254,7 +254,7 @@ class SettingsDefaultModels:
         # 聊天模型
         if default_type == "chat_model":
             EndPoints.settings["default_chat_model"].current.value = default_model
-            err_msg = EndPoints.runtime["lc_agents"].chat_agent_update()
+            err_msg = EndPoints.runtime["lc_agents"].agent_chat_update()
             # 加载错误时的处理
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)

@@ -25,7 +25,7 @@ class ChatHeader:
                 text_style=ft.TextStyle(weight=ft.FontWeight.BOLD),
                 dense=True,
                 multiline=False,
-                border=ft.InputBorder.NONE, # 隐藏边框
+                border=ft.NoInputBorder(),
                 data={"session_id": session_id},
                 on_blur=cls.callback_title_edit,
                 on_click=cls.callback_title_click,
