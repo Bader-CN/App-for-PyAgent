@@ -255,7 +255,7 @@ class SettingsModelServices:
                             dense=True,
                             content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
                             margin=0,
-                            border=ft.InputBorder.NONE, # 隐藏边框
+                            border=ft.NoInputBorder(),
                         ),
                         on_hover=cls.callback_provider_name_hover,  # 鼠标悬浮时触发(进入/离开都触发)
                         data={"provider_name": provider_name},
