@@ -1,6 +1,5 @@
 import os
 import yaml
-
 from pathlib import Path
 from typing import Any, Dict, List
 from src.endpoints import EndPoints
@@ -29,7 +28,7 @@ class FileDataUtils:
         - data_cont:  初始化的数据, 数据类型可以是 Dict / List
         """
         try:
-            logger.info(f"Initializing default data_type file: {data_type}")
+            logger.debug(f"initializing default data_type file: {data_type}")
             filepath = os.path.abspath(os.path.join(self.app_path_root, f"storage/data/{data_type}.yaml"))
             Path(filepath).parent.mkdir(parents=True, exist_ok=True)
             self.data_save(data_type=data_type, data_cont=data_cont)
@@ -67,7 +66,7 @@ class FileDataUtils:
                 )
             # 同步缓存数据
             self.app_data_dict[data_type] = data_cont
-            logger.success(f"Write data_type file: {data_type} success.")
+            logger.debug(f"write data_type file: {data_type} success.")
         except Exception as e:
             logger.error(e)
 

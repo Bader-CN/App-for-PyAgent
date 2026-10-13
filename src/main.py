@@ -78,7 +78,7 @@ def main(page: ft.Page):
     )
 
     page.update()
-    logger.info(f"application has started successfully.")
+    logger.success(f"application has started successfully.")
 
 def listen_keyboard(e: ft.KeyboardEvent):
     """

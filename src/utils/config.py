@@ -1,6 +1,5 @@
 import os
 import yaml
-
 from pathlib import Path
 from typing import Any, Dict, List
 from src.endpoints import EndPoints
@@ -14,11 +13,12 @@ class ConfigUtils:
     def __init__(self):
         # App 运行时的根目录
         self.app_path_root = EndPoints.runtime["app_path_root"]
-        # App 配置文件路径
-        self.app_conf_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/config.yaml"))
-        # App 配置字典
+
+        # App 配置字典 & 文件路径
         self.app_conf_dict = None
-        # App 默认设置
+        self.app_conf_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/config.yaml"))
+        
+        # App 默认设置参数
         self.api_url = "http://<api_base_url>:<port>/v1"
         self.api_key = "sk-****"
         self.api_type = "OpenAI"
@@ -26,8 +26,7 @@ class ConfigUtils:
         # 如果文件不存在, 则创建默认配置
         if not Path(self.app_conf_file).exists():
             self.conf_init()
-        # 读取配置文件
-        self.app_conf_dict = self.conf_read()
+        self.app_conf_dict = self.conf_read()   # 读取配置文件
 
     def conf_init(self):
             """
@@ -60,7 +59,7 @@ class ConfigUtils:
             try:
                 Path(self.app_conf_file).parent.mkdir(parents=True, exist_ok=True)
                 self.conf_save()
-                logger.warning("Initialize default configuration file.")
+                logger.debug("initialize default configuration file.")
             except Exception as e:
                 logger.error(e)
 
@@ -93,7 +92,7 @@ class ConfigUtils:
                     indent=2,                   # 设置缩进空格数为 2
                     width=float('inf')          # 限制行最大宽度, 设为 float('inf') 意味着不强制换行
                 )
-            logger.success("Configuration file saved successfully.")
+            logger.debug("configuration file saved successfully.")
         except Exception as e:
             logger.error(e)
 
@@ -145,7 +144,7 @@ class ConfigUtils:
         if model_providers is not None:
             return model_providers.get(provider_name)
         else:
-            logger.error(f"Not found provider: {provider_name}, Please check your configuration file.")
+            logger.error(f"not found provider: {provider_name}, Please check your configuration file.")
             return None
 
     def provider_add(self, provider_name:str):
@@ -203,9 +202,9 @@ class ConfigUtils:
                 model_providers[provider_name]["api_url"] = api_url.strip()
                 self.conf_save()
             else:
-                logger.error(f"Can't set the API URL of the model provider: {provider_name}")
+                logger.error(f"can't set the API URL of the model provider: {provider_name}")
         except Exception as e:
-            logger.error(f"Can't set the API URL of the model provider: {provider_name}, error is {e}")
+            logger.error(f"can't set the API URL of the model provider: {provider_name}, error is {e}")
 
     def provider_api_key(self, provider_name: str) -> str | None :
         """
@@ -234,7 +233,7 @@ class ConfigUtils:
                 model_providers[provider_name]["api_key"] = api_key.strip()
                 self.conf_save()
         except Exception as e:
-            logger.error(f"Error setting API key for {provider_name}, error is {e}")
+            logger.error(f"error setting API key for {provider_name}, error is {e}")
 
     def provider_api_type(self, provider_name: str):
         """
@@ -262,7 +261,7 @@ class ConfigUtils:
                 model_providers[provider_name]["api_type"] = api_type.strip()
                 self.conf_save()
         except Exception as e:
-            logger.error(f"Error setting API Type for {provider_name}, error is {e}")
+            logger.error(f"error setting API Type for {provider_name}, error is {e}")
     
     def provider_models_add(self, provider_model: dict):
         """
@@ -336,7 +335,7 @@ class ConfigUtils:
         for i in range(len(models)):
             if models[i]["model_id"] == model_id:
                 del models[i]
-                logger.trace(f"The specified model has been deleted. Provider: {provider}; Model ID: {model_id}.")
+                logger.trace(f"specified model has been deleted. Provider: {provider}; Model ID: {model_id}.")
                 break
         # 保存配置文件
         self.conf_save()
@@ -349,17 +348,15 @@ class ProfileUtils:
     def __init__(self):
         # App 运行时的根目录
         self.app_path_root = EndPoints.runtime["app_path_root"]
-        # User 配置文件路径
-        self.app_user_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/profile.yaml"))
-        # User 配置字典
+
+        # User 配置字典 & 文件路径
         self.app_user_dict = None
-        # User 默认设置
+        self.app_user_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/profile.yaml"))
 
         # 如果文件不存在, 则创建默认配置
         if not Path(self.app_user_file).exists():
             self.conf_init()
-        # 读取配置文件
-        self.app_user_dict = self.conf_read()
+        self.app_user_dict = self.conf_read()   # 读取配置文件
 
     def conf_init(self):
         """
@@ -387,7 +384,7 @@ class ProfileUtils:
         try:
             Path(self.app_user_file).parent.mkdir(parents=True, exist_ok=True)
             self.conf_save()
-            logger.warning("Initialize default user profile.")
+            logger.debug("initialize default user profile.")
         except Exception as e:
             logger.error(e)
 
@@ -420,7 +417,7 @@ class ProfileUtils:
                     indent=2,                   # 设置缩进空格数为 2
                     width=float('inf')          # 限制行最大宽度, 设为 float('inf') 意味着不强制换行
                 )
-            logger.success("User profile saved successfully.")
+            logger.debug("user profile saved successfully.")
         except Exception as e:
             logger.error(e)
 
@@ -498,7 +495,7 @@ class ProfileUtils:
             # 修改运行变量 & 语言字典
             EndPoints.runtime["app_language"] = lang
             EndPoints.runtime["app_util_lang"].language_load()
-            logger.trace(f"App language & dict set to {lang}")
+            logger.debug(f"app language & dict set to {lang}")
         except Exception as e:
             logger.error(e)
 

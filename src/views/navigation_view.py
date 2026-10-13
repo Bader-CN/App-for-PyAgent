@@ -1,8 +1,8 @@
 import flet as ft
 
 from src.endpoints import EndPoints
-from src.utils.logging import logger
 from src.components.chat_list import ChatList
+from src.utils.logging import logger
 
 
 class NavigationView:
@@ -13,6 +13,7 @@ class NavigationView:
     def __init__(self):
         # 记录上一次点击的导航栏按钮
         self.last_selected_button = None
+
         # 导航栏按钮
         self.chat = ft.Container(content = ft.IconButton(
             ft.Icons.CHAT, tooltip=EndPoints.runtime["app_util_lang"].translate(key="chat"), 
@@ -29,6 +30,7 @@ class NavigationView:
             on_click=self.render_main_view,
             data={"i18n_key": "settings", "selected_tag": "settings"},
         ))
+
         # 导航栏对象
         self.navigation = ft.Container(
             content = ft.Column(
@@ -56,7 +58,7 @@ class NavigationView:
             # 抹除主视图中的内容
             if EndPoints.root["main_view"].current.content is not None:
                 EndPoints.root["main_view"].current.content = None
-                logger.trace("The content of the main_view container have been cleared.")
+                logger.debug("main_view container content have been cleared.")
                 
             # 基于 selected_tag 来调用对应的渲染组件
             if selected_tag == "chat":

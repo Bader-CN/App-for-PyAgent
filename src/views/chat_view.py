@@ -1,9 +1,9 @@
 import flet as ft
 
 from src.endpoints import EndPoints
-from src.utils.logging import logger
 from src.components.chat_list import ChatList
 from src.components.chat_input import ChatInput
+from src.utils.logging import logger
 
 
 class ChatView:
@@ -14,7 +14,8 @@ class ChatView:
         # 宽度定义
         self.lv1_min_width = 200
         self.lv1_max_width = 300
-        self.lv1_view_width = EndPoints.runtime["app_util_profile"].chat_view_lv1_width()  # 当前宽度
+        # 当前宽度
+        self.lv1_view_width = EndPoints.runtime["app_util_profile"].chat_view_lv1_width()
         # 对话视图基础布局
         self.lv1_view = ft.Container(ref=EndPoints.chat["lv1_view"])
         self.lv2_view = ft.Container(ref=EndPoints.chat["lv2_view"])
@@ -59,7 +60,7 @@ class ChatView:
         """
         self.render_lv1()
         self.render_lv2()
-        logger.trace("Rendering chat_view completed.")
+        logger.debug("rendering chat_view completed.")
 
     def render_lv1(self):
         """

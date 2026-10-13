@@ -8,6 +8,7 @@ from src.endpoints import EndPoints
 from src.utils.logging import logger
 from PIL import Image
 
+
 class CacheUtils:
     """
     缓存工具类
@@ -15,19 +16,18 @@ class CacheUtils:
     def __init__(self):
         # App 运行时的根目录
         self.app_path_root = EndPoints.runtime["app_path_root"]
-        # 持久化的消息状态文件
-        self.tmp_msgs_state_file = os.path.abspath(os.path.join(self.app_path_root, "storage/data/tmp_msgs_state.yaml"))
-        # 对应的 tmp_msgs 状态字典
-        self.tmp_msgs_state_dict = {}
 
+        # tmp_msgs 字典 & 持久化文件
+        self.tmp_msgs_state_dict = {}
+        self.tmp_msgs_state_file = os.path.abspath(os.path.join(self.app_path_root, "storage/data/tmp_msgs_state.yaml"))
+        
         # 剪切板临时目录
         self.tmp_clipboard_dir = os.path.abspath(os.path.join(self.app_path_root, "storage/temp/clipboard"))
 
-        # 如果文件不存在, 则创建默认配置
+        # 如果文件不存在, 则创建默认 tmp_msgs 文件
         if not Path(self.tmp_msgs_state_file).exists():
             self.tmp_msgs_state_init()
-        # 读取 & 同步 -> EndPoints.tmp_msgs
-        self.tmp_msgs_state_sync()
+        self.tmp_msgs_state_sync()      # 读取 & 同步 -> EndPoints.tmp_msgs
 
     def tmp_msgs_init(self, session_id: str, status: str = "stop"):
         """
@@ -55,13 +55,8 @@ class CacheUtils:
         删除指定会话的临时缓存
 
         - session_id:   会话ID
-
-        Note:
-        守卫的理由 (为何条件删除而非直接 pop):
-        - 流式任务的 chat_session_id 是任务局部变量, 置 None session_id_chat_current 拦不住它
-          -> 无守卫直接删除, 会让它读 ["status"] 时抛 KeyError
-        - 流式中的会话暂不清理, 属已知轻度泄漏 (待中止路径完善后处理)
         """
+        # 必须得有才能删除
         if EndPoints.tmp_msgs.get(session_id, {}).get("status") in (None, "stop", "error"):
             EndPoints.tmp_msgs.pop(session_id, None)
 
@@ -72,7 +67,7 @@ class CacheUtils:
         try:
             Path(self.tmp_msgs_state_file).parent.mkdir(parents=True, exist_ok=True)
             self.tmp_msgs_state_save()
-            logger.warning("Initialize tmp_msgs state cache file.")
+            logger.debug("initialize tmp_msgs state cache file.")
         except Exception as e:
             logger.error(e)
 
@@ -91,7 +86,7 @@ class CacheUtils:
                     indent=2,                   # 设置缩进空格数为 2
                     width=float('inf')          # 限制行最大宽度, 设为 float('inf') 意味着不强制换行
                 )
-            logger.success("tmp_msgs state cache file saved successfully.")
+            logger.debug("tmp_msgs state cache file saved successfully.")
         except Exception as e:
             logger.error(e)
 

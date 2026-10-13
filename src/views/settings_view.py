@@ -64,7 +64,7 @@ class SettingsView:
         """
         self.render_lv1()
         self.render_lv2()
-        logger.trace("Rendering settings_view completed.")
+        logger.debug("rendering settings_view completed.")
 
     def render_lv1(self):
         """
@@ -83,7 +83,7 @@ class SettingsView:
             # Stretch: 拉伸至等宽
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        logger.trace("Complete rendering of lv1 settings_view.")
+        logger.debug("complete rendering of lv1 settings_view.")
 
     def render_lv2(self, e: ft.ControlEvent | None = None):
         """
@@ -94,7 +94,7 @@ class SettingsView:
         """
         # 重复点击: e 非空 & e.control.data.get("selected_tag") == last_selected_tag
         if e is not None and e.control.data.get("selected_tag") == self.last_selected_tag:
-            logger.trace(f"Duplicate click, ignore rendering of lv2 settings_view {self.last_selected_tag}.")
+            logger.debug(f"duplicate click, ignore rendering of lv2 settings_view {self.last_selected_tag}.")
             return
         # e 非空: e.control.data.get("selected_tag")
         # e 为空: "general_settings"
@@ -155,7 +155,7 @@ class SettingsView:
             )
             self.render_lv3(selected_tag=selected_tag)
 
-        logger.trace(f"Complete rendering of lv2 settings_view with {selected_tag}.")
+        logger.debug(f"complete rendering of lv2 settings_view with {selected_tag}.")
 
     def render_lv3(self, selected_tag: str):
         """
@@ -174,4 +174,4 @@ class SettingsView:
                 ft.VerticalDivider(width=1), 
                 self.lv3_view,
             ])
-            logger.trace("Complete rendering of lv3 settings_view with model_provider.")
+            logger.debug("complete rendering of lv3 settings_view with model_provider.")
