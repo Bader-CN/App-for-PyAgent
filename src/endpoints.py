@@ -32,7 +32,7 @@ class EndPoints:
         "chat_input_textfield": ft.Ref[ft.TextField](),
         "chat_input_model_select": ft.Ref[ft.Text](),
         "chat_input_model_reason": ft.Ref[ft.Text](),
-        "chat_input_send_icon": ft.Ref[ft.IconButton](),
+        "chat_input_send_btn": ft.Ref[ft.IconButton](),
     }
 
     # 设置界面

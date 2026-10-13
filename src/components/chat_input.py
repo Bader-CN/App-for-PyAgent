@@ -209,7 +209,7 @@ class ChatInput:
                     height=cls.btn_height,
                     width=cls.btn_width,
                     on_click=cls.callback_send_user_msg,
-                    ref=EndPoints.chat["chat_input_send_icon"],
+                    ref=EndPoints.chat["chat_input_send_btn"],
                 ),
             ],
             spacing=5,
@@ -253,7 +253,7 @@ class ChatInput:
         """
         # 获取 ft.IconButton & Page 对象
         if e is None:
-            ft_btn = EndPoints.chat["chat_input_send_icon"].current
+            ft_btn = EndPoints.chat["chat_input_send_btn"].current
             page = EndPoints.root["page"]
             if ft_btn is None:
                 logger.warning("Send button not available, ignore this call.")

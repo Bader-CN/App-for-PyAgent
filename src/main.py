@@ -25,6 +25,8 @@ def main(page: ft.Page):
     """
     Flet 主函数
     """
+    logger.info(f"application starting...")
+
     # 绑定 page 对象
     EndPoints.root["page"] = page
     # 绑定绑定键盘事件
@@ -50,10 +52,6 @@ def main(page: ft.Page):
     EndPoints.views["settings_view"] = settings_view
     # 加载智能体
     EndPoints.runtime["lc_agents"] = LCAgents()
-    # # 预热 MCP 工具 (临时测试): 提前把联网工具取回来
-    # # -> 否则冷启动后的第一次发送要先等一次网络往返
-    # # -> 注意: 必须走 page.run_task 投到 event loop 上, 不能在这里直接 await/run
-    # page.run_task(EndPoints.runtime["lc_agents"].mcp_tools_load)
 
     page.add(
         ft.Column(
@@ -68,7 +66,7 @@ def main(page: ft.Page):
                         # 分割线
                         ft.VerticalDivider(width=1),
                         # 主视图
-                        main_view.main_view
+                        main_view.main_view,
                     ],
                     spacing=0,
                     expand=True,
@@ -80,7 +78,7 @@ def main(page: ft.Page):
     )
 
     page.update()
-    logger.trace(f"App started successfully.")
+    logger.info(f"application has started successfully.")
 
 def listen_keyboard(e: ft.KeyboardEvent):
     """
@@ -89,17 +87,14 @@ def listen_keyboard(e: ft.KeyboardEvent):
     Note:
     https://flet.dev/docs/types/keyboardevent
     """
-    # Chat 界面发送消息
-    # Shift + Enter 且当前 session_id_chat_current 不能为 None
+    # 情况1: Chat 界面 & 发送消息 (Shift + Enter & session_id_chat_current 不能为 None)
     if e.shift and e.key == "Enter" and EndPoints.runtime["session_id_chat_current"] is not None:
-        logger.debug(f"[Send Keyboard] Current session_id_chat is: {EndPoints.runtime["session_id_chat_current"]}")
-        send_btn = EndPoints.chat["chat_input_send_icon"].current
+        send_btn = EndPoints.chat["chat_input_send_btn"].current
+        # 仅在发送按钮存在 & 图标处于可发送时才会触发
         if send_btn is not None and send_btn.icon == ft.Icons.SEND:
             ChatInput.callback_send_user_msg()
-        else:
-            logger.debug("[Send Keyboard] Send icon is Stop. Ignore this click...")
-    # Chat 界面剪切板
-    # Ctrl + V 且当前 session_id_chat_current 不能为 None
+
+    # 情况2: Chat 界面 & 剪切板 (Ctrl + V & session_id_chat_current 不能为 None)
     elif e.ctrl and e.key == "V" and EndPoints.runtime["session_id_chat_current"] is not None:
         # 异步执行 (获取剪贴板里的图片内容)
         # https://docs.flet.dev/services/clipboard/?h=clipboard

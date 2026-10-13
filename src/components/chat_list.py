@@ -193,9 +193,9 @@ class ChatList:
             ChatHeader.build_blk_header(session_id, title)
             # 调整发送按钮图标
             if EndPoints.tmp_msgs[session_id]["status"] in ["stop", "error", "aborted"]:
-                EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.SEND
+                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
             else:
-                EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.STOP
+                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.STOP
             # 附件信息
             ChatInput.refresh_input_attachments()
 

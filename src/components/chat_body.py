@@ -617,7 +617,7 @@ class ChatBody:
         # 模型没有配置时触发
         except Exception as e:
             AlertCommon.alert_model_config_error(message=str(e))
-            EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.SEND
+            EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
             EndPoints.root["page"].update()
             return
                     
@@ -738,7 +738,7 @@ class ChatBody:
 
             # 将发送按钮的图标替换为 ft.Icons.SEND 状态
             if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.SEND
+                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
                 EndPoints.root["page"].update()
 
             # 执行标题总结
@@ -1084,7 +1084,7 @@ class ChatBody:
                 # -> 不能化简成 `-idx + 1`: idx=1 (user_msg 已是最后一块) 时会退化成 [:0], 把整个面板清空 (中止后按库重渲染 / 空内容正常收尾时可达)
                 EndPoints.chat["chat_body"].current.content.controls = controls[:len(controls) - idx + 1]
                 # 直接将发送图标切换为 Stop
-                EndPoints.chat["chat_input_send_icon"].current.icon = ft.Icons.STOP
+                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.STOP
                 EndPoints.root["page"].update()
                 break
         if user_msg is None:
