@@ -160,3 +160,6 @@ cython_debug/
 .flet/
 build/
 storage/
+
+# Test
+tests/

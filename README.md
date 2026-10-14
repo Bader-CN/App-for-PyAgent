@@ -18,6 +18,8 @@ pip install -U PyYAML
 pip install -U pillow
 pip install -U loguru
 pip install -U aiosqlite
+# 测试 (可选, 仅运行 tests/ 时需要)
+pip install -U pytest pytest-asyncio
 ```
 
 # 运行命令

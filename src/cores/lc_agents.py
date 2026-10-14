@@ -13,6 +13,7 @@ from deepagents.backends import FilesystemBackend
 
 from src.endpoints import EndPoints
 from src.cores.lc_tools import LC_Tools
+from src.cores.lc_hotfix_openai import HotfixChatOpenAI
 from src.utils.logging import logger
 
 
@@ -73,13 +74,30 @@ class LCAgents:
                     tools.extend([LC_Tools.http_request_get_with_keyword, LC_Tools.http_request_get_with_url])
                 # 加载模型
                 provider_name, model_name = full_model_name.split("/", 1)
-                llm_model = init_chat_model(
-                    model_provider=EndPoints.runtime["app_util_conf"].provider_api_type(provider_name=provider_name),
-                    model=model_name,
-                    api_key=EndPoints.runtime["app_util_conf"].provider_api_key(provider_name=provider_name),
-                    base_url=EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name),
-                    extra_body=self.extra_body_chat if self.extra_body_chat else None,
-                )
+                # 服务信息
+                provider_api_type = EndPoints.runtime["app_util_conf"].provider_api_type(provider_name=provider_name)
+                provider_api_key = EndPoints.runtime["app_util_conf"].provider_api_key(provider_name=provider_name)
+                provider_api_url = EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name)
+                if str(provider_api_type).strip().lower() == "openai":
+                    # OpenAI 协议走热修复子类
+                    # -> 官方 ChatOpenAI 不提取非标准思考字段 (reasoning_content)
+                    #    子类在流式响应侧补齐 (见 lc_hotfix_openai.py)
+                    # -> 不能走 init_chat_model: 
+                    #    它内部经私有表 _BUILTIN_PROVIDERS 固定 new ChatOpenAI, 且带 lru_cache, 外部无法注入子类
+                    llm_model = HotfixChatOpenAI(
+                        model=model_name,
+                        api_key=provider_api_key,
+                        base_url=provider_api_url,
+                        extra_body=self.extra_body_chat if self.extra_body_chat else None,
+                    )
+                else:
+                    llm_model = init_chat_model(
+                        model_provider=provider_api_type,
+                        model=model_name,
+                        api_key=provider_api_key,
+                        base_url=provider_api_url,
+                        extra_body=self.extra_body_chat if self.extra_body_chat else None,
+                    )
                 self.agent_chat = create_agent(
                     model=llm_model,
                     checkpointer=self.checkpointer,
