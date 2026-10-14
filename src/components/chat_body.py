@@ -168,7 +168,7 @@ class ChatBody:
             # border=ft.border.Border.all(width=1, color=ft.Colors.GREY_500),
             # border_radius=5,
         )
-        logger.debug(user_msg)
+        logger.warning(user_msg)
         return user_msg_blk
 
     @classmethod
@@ -461,7 +461,7 @@ class ChatBody:
                 })
         # 什么都没有: 不写, 避免向历史里塞空消息
         if not content:
-            logger.warning(f"Nothing to save after abort: session_id={chat_session_id}")
+            logger.warning(f"nothing to save after abort: session_id={chat_session_id}")
             return
         
         # 组装 AIMessage
@@ -488,7 +488,7 @@ class ChatBody:
                 # https://docs.langchain.com/oss/python/langgraph/use-time-travel#from-a-specific-node
                 as_node="model",
             )
-            logger.warning(f"Aborted content saved: session_id={chat_session_id}, replaced={len(obsolete_ids)}")
+            logger.warning(f"aborted content saved: session_id={chat_session_id}, replaced={len(obsolete_ids)}")
         except Exception as e:
             # 补写失败不能连累收尾流程 (否则发送按钮会一直停在 STOP 图标上)
             logger.exception(e)
@@ -512,7 +512,7 @@ class ChatBody:
         # 检查当前状态是否已经处于 error / aborted
         # 如果是则直接暂停流式输出, 并直接返回 (防止重复处理)
         if EndPoints.tmp_msgs[chat_session_id]["status"] in ["error", "aborted"]:
-            logger.debug(f"Consume failed after status was already marked: {e}")
+            logger.warning(f"consume failed after status was already marked: {e}")
             await astream.abort()
             return
 
@@ -632,7 +632,7 @@ class ChatBody:
                 async for message in astream.messages:
                     # 状态 = error/aborted, 则直接 abort() 来关闭所有 channel 让 gather 干净返回
                     if EndPoints.tmp_msgs[chat_session_id]["status"] in ["error", "aborted"]:
-                        logger.warning(f"[astream.messages] Chat stream aborted: session_id={chat_session_id}")
+                        logger.warning(f"stream aborted: session_id={chat_session_id}")
                         await astream.abort()
                         return
                     # 获取 langchain 执行的唯一id
@@ -655,7 +655,7 @@ class ChatBody:
                             status=EndPoints.tmp_msgs[chat_session_id]["status"], 
                             reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
                         )
-                        logger.warning(f"[consume] Chat stream aborted: session_id={chat_session_id}")
+                        logger.warning(f"stream aborted: session_id={chat_session_id}")
                         return
             except Exception as e:
                 # 本轮 message 的消费出错: 统一标记 error + 中止本轮流式输出
@@ -678,7 +678,7 @@ class ChatBody:
         #    (c) 重复补写落库 / 重复渲染一个错误块 (实测: 错误块出现 2 次)
         # -> 会话条目被删时 .get() 得 None, 同样在此返回
         if EndPoints.tmp_msgs.get(chat_session_id) is not round_msgs:
-            logger.warning(f"This round was superseded, skip finalize. session_id={chat_session_id}")
+            logger.warning(f"this round was superseded, skip finalize. session_id={chat_session_id}")
             return
 
         # 意外终止时的渲染/后处理 (error/aborted)
@@ -712,7 +712,6 @@ class ChatBody:
                 chat_number = len(EndPoints.tmp_msgs[chat_session_id]["aimsgs"])
                 need_finally = True  # 最后一条是否需要替换为 blk_ai_finally
                 if chat_number > 2:
-                    logger.warning("触发: chat_number > 2")
                     blk_ai_finally = cls.build_blk_ai_text_finally(
                         text=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"),
                         lc_run_id=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("lc_run_id"),
@@ -1068,7 +1067,7 @@ class ChatBody:
         # 重试只能发生在「一轮已结束」时: stop / error / aborted
         status = EndPoints.tmp_msgs.get(chat_session_id, {}).get("status")
         if status not in ("stop", "error", "aborted"):
-            logger.warning(f"Chat stream is busy (status={status}), ignore this retry click. session_id={chat_session_id}")
+            logger.warning(f"stream is busy (status={status}), ignore this retry click. session_id={chat_session_id}")
             return
         
         # 抢占本轮: 立刻置为非终态, 防止第二次点击重试
@@ -1089,7 +1088,7 @@ class ChatBody:
                 break
         if user_msg is None:
             EndPoints.tmp_msgs[chat_session_id]["status"] = status
-            logger.warning(f"No user message block found, ignore this retry click. session_id={chat_session_id}")
+            logger.warning(f"no user message block found, ignore this retry click. session_id={chat_session_id}")
             return
 
         # 从 checkpointer 中删除指定内容
@@ -1111,9 +1110,7 @@ class ChatBody:
             errmsg = None
             # 注意: 写入入口必须有 agent
             if lc_agents.agent_chat is None:
-                logger.warning("Loading Chat Agent...")
                 await lc_agents.agent_chat_update_async()
-                logger.warning("Loading Chat Agent Finish.")
             if lc_agents.agent_chat is None:
                 # 建不出来: 没配默认模型 / 模型配置有问题
                 errmsg = EndPoints.runtime["app_util_lang"].translate(key="retry_failed_desc")

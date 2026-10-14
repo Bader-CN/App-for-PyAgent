@@ -1,7 +1,5 @@
 import flet as ft
-
 from typing import Dict
-
 from src.endpoints import EndPoints
 from src.components.common import AlertCommon
 from src.utils.logging import logger
@@ -259,7 +257,7 @@ class SettingsDefaultModels:
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)
                 # 抹掉配置 & UI
-                logger.error(f"Found invalid model configuration, reason is: {err_msg}")
+                logger.error(f"invalid model configuration, reason is: {err_msg}")
                 EndPoints.runtime["app_util_profile"].default_model_set(default_type=default_type, default_model=None)
                 EndPoints.settings["default_chat_model"].current.value = None
                 EndPoints.root["page"].update()

@@ -1,9 +1,8 @@
 import flet as ft
-
 from typing import Dict
-
 from src.endpoints import EndPoints
 from src.utils.logging import logger
+
 
 class SettingsModelServices:
     """

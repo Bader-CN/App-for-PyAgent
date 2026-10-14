@@ -1,4 +1,3 @@
-import copy
 import uuid
 import flet as ft
 from src.endpoints import EndPoints
@@ -314,7 +313,7 @@ class ChatList:
                     else:
                         blk = ChatBody.build_blk_ai_text(text=msg["text"], lc_run_id=message.id)
                 else:
-                    logger.error(f"Unknown message type: {msg}")
+                    logger.error(f"unknown message type: {msg}")
                     continue
                 if into_summary:
                     _summary_get().append(blk)

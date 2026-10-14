@@ -232,7 +232,6 @@ class ChatInput:
         # 截图
         images = EndPoints.runtime["app_util_cache"].clipboard_image_get(session_prefix=session_id_chat)
         if images:
-            logger.debug(images)
             for filename in images:
                 image_blk = cls.build_blk_attachment(file_type="image", file_name=filename)
                 EndPoints.chat["chat_input_attachments"].current.controls.append(image_blk)
@@ -256,7 +255,7 @@ class ChatInput:
             ft_btn = EndPoints.chat["chat_input_send_btn"].current
             page = EndPoints.root["page"]
             if ft_btn is None:
-                logger.warning("Send button not available, ignore this call.")
+                logger.warning("send_btn not available, ignore this call.")
                 return
         else:
             ft_btn = e.control
@@ -294,7 +293,7 @@ class ChatInput:
             else:
                 ft_btn.icon = ft.Icons.SEND
                 EndPoints.chat["chat_input_textfield"].current.value = None
-                logger.warning("Input content is empty, ignoring this click action.")
+                logger.warning("input content is empty, ignoring this click action.")
                 page.update()
         # 基于图标判断: 终止消息
         else:
@@ -303,7 +302,7 @@ class ChatInput:
             # 已经终止过了: 忽略本次点击
             # -> 图标已切回 SEND, 正常点不到第二次; 但快速双击 / 键盘事件仍可能进来
             if EndPoints.tmp_msgs[chat_session_id]["status"] in ["error", "aborted"]:
-                logger.warning(f"Chat stream already terminated (status={EndPoints.tmp_msgs[chat_session_id]['status']}), ignore this stop click. session_id={chat_session_id}")
+                logger.warning(f"chat stream already terminated (status={EndPoints.tmp_msgs[chat_session_id]['status']}), ignore this stop click. session_id={chat_session_id}")
                 return
             EndPoints.tmp_msgs[chat_session_id]["status"] = "aborted"
             EndPoints.tmp_msgs[chat_session_id]["reason"] = EndPoints.runtime["app_util_lang"].translate(key="request_was_aborted")
@@ -348,7 +347,7 @@ class ChatInput:
         # 同类风格参考 callback_send_user_msg 里 "已点击暂停但未停止" 的处理
         lc_agents = EndPoints.runtime["lc_agents"]
         if lc_agents.agent_chat_loading:
-            logger.warning(f"Chat agent is loading, ignore this click. default_model is {default_model}.")
+            logger.warning(f"chat agent is loading, ignore this click. default_model is {default_model}.")
             return
         
         # 先刷新界面和设置
@@ -380,9 +379,6 @@ class ChatInput:
         lc_agents = EndPoints.runtime["lc_agents"]
         reason_lv_dict = EndPoints.runtime["app_util_profile"].reasoning_level()
 
-        logger.debug(reason_lv_dict["chat"])
-        logger.debug(e.control.data["reasoning_level"])
-
         # 当前值 != 保存的值
         if reason_lv_dict["chat"] != e.control.data["reasoning_level"]:
             # 先刷新界面和设置
@@ -396,7 +392,6 @@ class ChatInput:
 
             # 重新加载模型
             while lc_agents.agent_chat_loading:
-                logger.warning(f"Chat model loading, retrying...")
                 await asyncio.sleep(0.2)             
             err_msg = await lc_agents.agent_chat_update_async()
             if err_msg:
