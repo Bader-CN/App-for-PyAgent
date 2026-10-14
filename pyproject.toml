@@ -1,0 +1,58 @@
+[project]
+name = "app-for-pyagent"
+version = "0.1.0"
+description = "Flet 桌面应用：通过 LangChain / DeepAgents 与 LLM 对话（纯 Python）"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Bader-CN", email = "zhanghong.personal@outlook.com" }
+]
+dependencies = [
+    # GUI 框架
+    "flet>=1.0.4",
+    # 智能体核心层: LangChain / LangGraph / DeepAgents
+    "langchain>=1.4.4",
+    "langchain-openai>=1.7.0",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.14",
+    "langgraph-checkpoint-sqlite>=3.1.1",
+    "deepagents>=0.7.23",
+    # 工具层 / 其它
+    "PyYAML>=6.0.3",
+    "loguru>=0.7.3",
+    "pillow>=12.3.0",
+    "requests>=2.34.2",
+    "aiosqlite>=0.22.1",
+]
+
+[dependency-groups]
+dev = [
+    "flet-cli>=1.0.4",
+    "flet-desktop>=1.0.4",
+    "flet-web>=1.0.4",
+    # Integration testing with `flet test` / pytest. The `test` extra brings in
+    # pytest, pytest-asyncio and the screenshot-comparison dependencies.
+    "flet[test]>=1.0.4",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# 项目内部使用绝对导入 `from src.xxx import ...`，因此需把仓库根目录加入 sys.path
+pythonpath = ["."]
+
+[tool.flet]
+org = "com.mycompany"
+product = "app-for-pyagent"
+company = "Flet"
+copyright = "Copyright (C) 2023-2026 by Flet"
+
+# src/assets/icon.png is the icon for every platform. Keep it transparent and
+# filling the whole canvas: web, Windows and Linux show it as-is, and Flet
+# shrinks it to the margin iOS, macOS and Android each mask away. This colour
+# is what sits behind it where transparency cannot survive - the iOS icon, the
+# macOS tile and the Android background layer. Defaults to white.
+# icon_background = "#ffffff"
+
+[tool.flet.app]
+path = "src"
