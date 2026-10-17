@@ -3,8 +3,8 @@ import flet as ft
 from src.endpoints import EndPoints
 from src.components.chat_header import ChatHeader
 from src.components.chat_body import ChatBody
-from src.components.chat_input import ChatInput
 from src.components.common import MessageCommon
+from src.components.common import InputCommon
 from src.utils.logging import logger
 from langchain.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import START, StateGraph
@@ -192,11 +192,11 @@ class ChatList:
             ChatHeader.build_blk_header(session_id, title)
             # 调整发送按钮图标
             if EndPoints.tmp_msgs[session_id]["status"] in ["stop", "error", "aborted"]:
-                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
+                EndPoints.input["input_send_btn"].current.icon = ft.Icons.SEND
             else:
-                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.STOP
+                EndPoints.input["input_send_btn"].current.icon = ft.Icons.STOP
             # 附件信息
-            ChatInput.refresh_input_attachments()
+            InputCommon.refresh_input_attachments()
 
             # 更新 & 异步渲染
             if e:

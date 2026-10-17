@@ -19,6 +19,16 @@ class EndPoints:
         "main_view": ft.Ref[ft.Container](),
     }
 
+    # 输入界面
+    input = {
+        "input_panel": ft.Ref[ft.Container](),
+        "input_attachments": ft.Ref[ft.Row](),
+        "input_textfield": ft.Ref[ft.TextField](),
+        "input_model_select": ft.Ref[ft.Text](),
+        "input_model_reason": ft.Ref[ft.Text](),
+        "input_send_btn": ft.Ref[ft.IconButton](),
+    }
+
     # 对话界面
     chat = {
         "lv1_view": ft.Ref[ft.Container](),
@@ -27,12 +37,6 @@ class EndPoints:
         "chat_list": ft.Ref[ft.ReorderableListView](),
         "chat_header": ft.Ref[ft.Container](),
         "chat_body": ft.Ref[ft.Container](),
-        "chat_input": ft.Ref[ft.Container](),
-        "chat_input_attachments": ft.Ref[ft.Row](),
-        "chat_input_textfield": ft.Ref[ft.TextField](),
-        "chat_input_model_select": ft.Ref[ft.Text](),
-        "chat_input_model_reason": ft.Ref[ft.Text](),
-        "chat_input_send_btn": ft.Ref[ft.IconButton](),
     }
 
     # 设置界面

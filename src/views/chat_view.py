@@ -3,6 +3,7 @@ import flet as ft
 from src.endpoints import EndPoints
 from src.components.chat_list import ChatList
 from src.components.chat_input import ChatInput
+from src.components.common import InputCommon
 from src.utils.logging import logger
 
 
@@ -21,7 +22,7 @@ class ChatView:
         self.lv2_view = ft.Container(ref=EndPoints.chat["lv2_view"])
         self.chat_header = ft.Container(ref=EndPoints.chat["chat_header"])
         self.chat_body = ft.Container(ref=EndPoints.chat["chat_body"])
-        self.chat_input = ft.Container(ref=EndPoints.chat["chat_input"])
+        # 输入面板在 render_lv2 中重建, 不在此处常驻 (理由见 render_lv2)
         # 可拖动的分割线
         self.vdivider = ft.GestureDetector(
             content=ft.Container(
@@ -106,31 +107,18 @@ class ChatView:
             # 消息块右对齐需改用 ft.Row(alignment=ft.MainAxisAlignment.END, controls=[blk]) 包裹
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        # 输入面板
-        self.chat_input.border_radius = 10
-        self.chat_input.border = ft.Border.all()
-        self.chat_input.margin = ft.Margin(left=0, top=0, right=0, bottom=10)
-        self.chat_input.padding = ft.Padding.symmetric(horizontal=5, vertical=5)
-        # 防止 ft.Ref 弱引用 产生的 GC 陷阱
-        # 如果2次赋值的内容完全相同, 则新控件不会被赋值, 而是直接被回收
-        # 界面上存在的则是老控件, 此刻 ref 指向的新控件已经消失了, 所以会出现 None 的错误
-        # 解决方法是先赋值一次 None, 规避掉 flet 本身的优化操作, 然后在重新赋值即可解决
-        self.chat_input.content = None
-        self.chat_input.content = ft.Column(
-            controls=[
-                ChatInput.build_blk_input_attachments(),
-                ChatInput.build_blk_input_textfield(),
-                ChatInput.build_blk_input_tools(),
-            ],
-            spacing=5,
-        )
+        # 输入面板: 每次渲染重建
+        # -> Flet 的 ref 在构造时绑定 (BaseControl.__post_init__: ref.current = self), 不会在挂载时重绑
+        #    故每次重建才能保证 ref 指向当前挂载的这一份
+        # -> 也顺带让模型下拉列表等 "构建期快照" 在每次切回时重新读取
+        self.input_panel = InputCommon.build_blk_input_panel(tools=ChatInput.build_blk_input_tools())
         # 渲染整体布局
         self.lv2_view.expand = True
         self.lv2_view.content = ft.Column(
             controls=[
                 self.chat_header,
                 self.chat_body,
-                self.chat_input,
+                self.input_panel,
             ],
             spacing=0,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,

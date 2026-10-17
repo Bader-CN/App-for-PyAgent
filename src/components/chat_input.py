@@ -8,75 +8,23 @@ from src.utils.logging import logger
 
 class ChatInput:
     """
-    输入组件
+    输入组件 (对话界面)
+
+    Note:
+    输入面板的通用积木在 InputCommon (见 common.py), 本类只保留 "差异面":
+    1. 工具菜单: 决定挂哪些工具 (agent 界面可只挂子集, 或换成自己的工具)
+    2. 绑定: 每个工具注入哪个 ref / 哪个 callback / 哪个 agent_type
+    3. callback 与状态: 发送 / 切模型 / 切思考 / 切搜索
     """
-    # 类变量
+    # 类别标记 (决定默认模型 / 思考强度 / i18n key 的取值)
+    agent_type = "chat"
+    # 布局常量
     btn_height = 32
     btn_width = 32
     popup_height = 28
     popup_font_size = 12
     model_min_width = 100
     model_max_width = 250
-
-    @classmethod
-    def build_blk_attachment(cls, file_type: str, file_name: str):
-        """
-        构建一个附件的显示块
-
-        Args:
-        - file_type: 附件类型, 值可以是 file/image/video/audio
-        - file_name: 附件名称
-        """
-        if "_screenshot_" in file_name:
-            display_name = f"screenshot_{file_name.split("_screenshot_", 1)[-1][:-4]}"
-        attachment = ft.Container(
-            ft.Row(
-                controls=[
-                    ft.Text(value=display_name, size=14),
-                    ft.IconButton(
-                        icon=ft.Icon(ft.Icons.CANCEL, size=14),
-                        height=28, width=28,
-                        padding=0,
-                        data={"type": file_type, "filename": file_name},
-                        on_click=cls.callback_attachment_del,
-                    ),
-                ],
-            ),
-            # 数据外部也保留一份, 这样比较好获取
-            data={"type": file_type, "filename": file_name},
-            bgcolor=ft.Colors.GREY_300,
-        )
-        return attachment
-
-    @classmethod
-    def build_blk_input_attachments(cls):
-        """
-        位于文本输入上方的附件栏
-        """
-        input_attachments = ft.Row(
-            controls=[],
-            ref=EndPoints.chat["chat_input_attachments"],
-        )
-        return input_attachments
-
-    @classmethod
-    def build_blk_input_textfield(cls):
-        """
-        文本输入的 TextField
-        """
-        input_textfield = ft.TextField(
-            multiline=True,
-            min_lines=2,
-            max_lines=6,
-            expand=True,
-            expand_loose=True,
-            dense=True,
-            content_padding=0,
-            text_size=13,
-            border=ft.NoInputBorder(),
-            ref=EndPoints.chat["chat_input_textfield"],
-        )
-        return input_textfield
 
     @classmethod
     def build_blk_input_tool_add_attachments(cls):
@@ -99,14 +47,14 @@ class ChatInput:
         工具 - 模型切换控件
         """
         model_select = ft.PopupMenuButton(
-            tooltip=EndPoints.runtime["app_util_lang"].translate(key="default_chat_model"),
+            tooltip=EndPoints.runtime["app_util_lang"].translate(key=f"default_{cls.agent_type}_model"),
             content=ft.Container(
                 ft.Row(
                     controls=[
                         ft.Text(
-                            value=EndPoints.runtime["app_util_profile"].default_model(default_type="chat_model"),
+                            value=EndPoints.runtime["app_util_profile"].default_model(default_type=f"{cls.agent_type}_model"),
                             size=cls.popup_font_size,
-                            ref=EndPoints.chat["chat_input_model_select"],
+                            ref=EndPoints.input["input_model_select"],
                         ),
                         ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=cls.popup_font_size),
                     ],
@@ -118,11 +66,11 @@ class ChatInput:
             ),
             items=[
                 ft.PopupMenuItem(
-                    content=i, 
+                    content=i,
                     height=cls.popup_height,
                     label_text_style=ft.TextStyle(size=cls.popup_font_size, color=ft.Colors.BLACK),
                     on_click=cls.callback_switch_chat_model,
-                    data={"default_type": "chat_model", "default_model": i},
+                    data={"default_type": f"{cls.agent_type}_model", "default_model": i},
                 )
                 for i in EndPoints.runtime["app_util_conf"].models_list_enable()
             ],
@@ -142,9 +90,9 @@ class ChatInput:
                 ft.Row(
                     controls=[
                         ft.Text(
-                            EndPoints.runtime["app_util_profile"].reasoning_level()["chat"], 
-                            size=cls.popup_font_size, 
-                            ref=EndPoints.chat["chat_input_model_reason"]
+                            EndPoints.runtime["app_util_profile"].reasoning_level()[cls.agent_type],
+                            size=cls.popup_font_size,
+                            ref=EndPoints.input["input_model_reason"],
                         ),
                         ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=cls.popup_font_size),
                     ],
@@ -156,8 +104,8 @@ class ChatInput:
             ),
             items=[
                 ft.PopupMenuItem(
-                    content=i, 
-                    height=cls.popup_height, 
+                    content=i,
+                    height=cls.popup_height,
                     label_text_style=ft.TextStyle(size=cls.popup_font_size, color=ft.Colors.BLACK),
                     on_click=cls.callback_switch_reasoning,
                     data={"reasoning_level": i},
@@ -176,7 +124,7 @@ class ChatInput:
         search_btn = ft.Container(
             ft.IconButton(
                 icon=ft.Icons.LANGUAGE,
-                icon_color=ft.Colors.BLUE, 
+                icon_color=ft.Colors.BLUE,
                 padding=0,
                 height=cls.btn_height,
                 width=cls.btn_width,
@@ -209,33 +157,12 @@ class ChatInput:
                     height=cls.btn_height,
                     width=cls.btn_width,
                     on_click=cls.callback_send_user_msg,
-                    ref=EndPoints.chat["chat_input_send_btn"],
+                    ref=EndPoints.input["input_send_btn"],
                 ),
             ],
             spacing=5,
         )
         return input_tools
-
-    @classmethod
-    def refresh_input_attachments(cls, session_id_chat: str|None = None):
-        """
-        获取当前会话中的附件信息并显示到输入框里
-
-        Args:
-        - session_id_chat: 搜索附件的范围是基于哪个会话ID
-        """
-        # 先情况所有附件控件
-        EndPoints.chat["chat_input_attachments"].current.controls.clear()
-        
-        if session_id_chat is None:
-            session_id_chat = EndPoints.runtime["session_id_chat_current"]
-        # 截图
-        images = EndPoints.runtime["app_util_cache"].clipboard_image_get(session_prefix=session_id_chat)
-        if images:
-            for filename in images:
-                image_blk = cls.build_blk_attachment(file_type="image", file_name=filename)
-                EndPoints.chat["chat_input_attachments"].current.controls.append(image_blk)
-            EndPoints.root["page"].update()
 
     @classmethod
     def callback_send_user_msg(cls, e: ft.ControlEvent | None = None):
@@ -252,7 +179,7 @@ class ChatInput:
         """
         # 获取 ft.IconButton & Page 对象
         if e is None:
-            ft_btn = EndPoints.chat["chat_input_send_btn"].current
+            ft_btn = EndPoints.input["input_send_btn"].current
             page = EndPoints.root["page"]
             if ft_btn is None:
                 logger.warning("send_btn not available, ignore this call.")
@@ -268,11 +195,11 @@ class ChatInput:
             user_msg = []
             ft_btn.icon = ft.Icons.STOP
             # 整理: 文字部分
-            user_text = EndPoints.chat["chat_input_textfield"].current.value
+            user_text = EndPoints.input["input_textfield"].current.value
             if user_text.strip() != "":
                 user_msg.append({"type": "text", "text": user_text.strip()})
             # 整理: 附件部分
-            controls = EndPoints.chat["chat_input_attachments"].current.controls
+            controls = EndPoints.input["input_attachments"].current.controls
             if controls:
                 for control in controls:
                     if control.data.get("type") == "image":
@@ -285,14 +212,14 @@ class ChatInput:
                 user_msg_blk = ChatBody.build_blk_user_msg(user_msg=user_msg)
                 EndPoints.chat["chat_body"].current.content.controls.append(user_msg_blk)
                 # 清空内容和附件
-                EndPoints.chat["chat_input_textfield"].current.value = None
-                EndPoints.chat["chat_input_attachments"].current.controls.clear()
+                EndPoints.input["input_textfield"].current.value = None
+                EndPoints.input["input_attachments"].current.controls.clear()
                 EndPoints.runtime["app_util_cache"].clipboard_image_del(session_prefix=EndPoints.runtime["session_id_chat_current"])
                 # 异步调用 (发送图标的终止条件不在这里判断, 而在 ChatBody.update_msg_stream 中来判断)
                 page.run_task(ChatBody.msg_update_stream, user_msg=user_msg)
             else:
                 ft_btn.icon = ft.Icons.SEND
-                EndPoints.chat["chat_input_textfield"].current.value = None
+                EndPoints.input["input_textfield"].current.value = None
                 logger.warning("input content is empty, ignoring this click action.")
                 page.update()
         # 基于图标判断: 终止消息
@@ -354,7 +281,7 @@ class ChatInput:
         # 这些同步操作必须在 await 之前执行 
         # -> 补丁先入队, 一旦让出 loop 就会被立即发出去
         EndPoints.runtime["app_util_profile"].default_model_set(default_type=default_type, default_model=default_model)
-        EndPoints.chat["chat_input_model_select"].current.value = default_model
+        EndPoints.input["input_model_select"].current.value = default_model
         page.update()
         
         # 继续加载模型: 用 await 而非 "线程 + join"
@@ -364,7 +291,7 @@ class ChatInput:
             AlertCommon.alert_model_config_error(message=err_msg)
             EndPoints.runtime["app_util_profile"].default_model_set(default_type=default_type, default_model=None)
             # 重新取 ref 并判空: await 期间若切过页, render_lv2() 会重建输入区, ref 可能已换绑或为 None
-            model_select = EndPoints.chat["chat_input_model_select"].current
+            model_select = EndPoints.input["input_model_select"].current
             if model_select is not None:
                 model_select.value = None
             page.update()
@@ -380,15 +307,15 @@ class ChatInput:
         reason_lv_dict = EndPoints.runtime["app_util_profile"].reasoning_level()
 
         # 当前值 != 保存的值
-        if reason_lv_dict["chat"] != e.control.data["reasoning_level"]:
+        if reason_lv_dict[cls.agent_type] != e.control.data["reasoning_level"]:
             # 先刷新界面和设置
-            reason_lv_dict["chat"] = e.control.data["reasoning_level"]
+            reason_lv_dict[cls.agent_type] = e.control.data["reasoning_level"]
             EndPoints.runtime["app_util_profile"].reasoning_level_set(reason_lv_dict=reason_lv_dict)
-            EndPoints.chat["chat_input_model_reason"].current.value = e.control.data["reasoning_level"]
+            EndPoints.input["input_model_reason"].current.value = e.control.data["reasoning_level"]
             page.update()
 
             # 更新 LCAgents 对话模型的 self.extra_body_chat 字典
-            EndPoints.runtime["lc_agents"].extra_body_update_reasoning_level(agent_type="chat")
+            EndPoints.runtime["lc_agents"].extra_body_update_reasoning_level(agent_type=cls.agent_type)
 
             # 重新加载模型
             while lc_agents.agent_chat_loading:
@@ -417,19 +344,3 @@ class ChatInput:
             err_msg = await lc_agents.agent_chat_update_async(web_search=True)
             if err_msg:
                 AlertCommon.alert_model_config_error(message=err_msg)
-
-    @classmethod
-    def callback_attachment_del(cls, e):
-        """
-        删除指定附件文件
-        """
-        # 获取文件名
-        filename = e.control.data["filename"]
-        controls = EndPoints.chat["chat_input_attachments"].current.controls
-        # 针对截图
-        if e.control.data["type"] == "image":
-            EndPoints.runtime["app_util_cache"].clipboard_image_del(filename=filename)
-            for control in controls:
-                if control.data.get("filename") == filename:
-                    EndPoints.chat["chat_input_attachments"].current.controls.remove(control)
-                    break

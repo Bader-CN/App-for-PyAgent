@@ -1,3 +1,4 @@
+import copy
 import json
 import uuid
 import asyncio
@@ -168,7 +169,14 @@ class ChatBody:
             # border=ft.border.Border.all(width=1, color=ft.Colors.GREY_500),
             # border_radius=5,
         )
-        logger.warning(user_msg)
+        # 调整日志显示内容
+        show_user_msg = copy.deepcopy(user_msg)
+        idx = 1
+        for msg in show_user_msg:
+            if msg["type"] == "image":
+                msg["url"] = f"image_{idx}"
+                idx += 1
+        logger.warning(show_user_msg)
         return user_msg_blk
 
     @classmethod
@@ -617,7 +625,7 @@ class ChatBody:
         # 模型没有配置时触发
         except Exception as e:
             AlertCommon.alert_model_config_error(message=str(e))
-            EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
+            EndPoints.input["input_send_btn"].current.icon = ft.Icons.SEND
             EndPoints.root["page"].update()
             return
                     
@@ -737,7 +745,7 @@ class ChatBody:
 
             # 将发送按钮的图标替换为 ft.Icons.SEND 状态
             if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.SEND
+                EndPoints.input["input_send_btn"].current.icon = ft.Icons.SEND
                 EndPoints.root["page"].update()
 
             # 执行标题总结
@@ -1083,7 +1091,7 @@ class ChatBody:
                 # -> 不能化简成 `-idx + 1`: idx=1 (user_msg 已是最后一块) 时会退化成 [:0], 把整个面板清空 (中止后按库重渲染 / 空内容正常收尾时可达)
                 EndPoints.chat["chat_body"].current.content.controls = controls[:len(controls) - idx + 1]
                 # 直接将发送图标切换为 Stop
-                EndPoints.chat["chat_input_send_btn"].current.icon = ft.Icons.STOP
+                EndPoints.input["input_send_btn"].current.icon = ft.Icons.STOP
                 EndPoints.root["page"].update()
                 break
         if user_msg is None:

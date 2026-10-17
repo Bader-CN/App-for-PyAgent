@@ -11,6 +11,7 @@ from src.views.main_view import MainView
 from src.views.chat_view import ChatView
 from src.views.settings_view import SettingsView
 from src.components.chat_input import ChatInput
+from src.components.common import InputCommon
 from src.cores.lc_agents import LCAgents
 from src.utils.config import ConfigUtils, ProfileUtils
 from src.utils.cache import CacheUtils
@@ -89,7 +90,7 @@ def listen_keyboard(e: ft.KeyboardEvent):
     """
     # 情况1: Chat 界面 & 发送消息 (Shift + Enter & session_id_chat_current 不能为 None)
     if e.shift and e.key == "Enter" and EndPoints.runtime["session_id_chat_current"] is not None:
-        send_btn = EndPoints.chat["chat_input_send_btn"].current
+        send_btn = EndPoints.input["input_send_btn"].current
         # 仅在发送按钮存在 & 图标处于可发送时才会触发
         if send_btn is not None and send_btn.icon == ft.Icons.SEND:
             ChatInput.callback_send_user_msg()
@@ -112,7 +113,7 @@ async def listen_clipboard(session_id: str):
     # 如果数据非空, 则添加一个图片
     if image_data is not None:
         EndPoints.runtime["app_util_cache"].clipboard_image_add(session_prefix=session_id, image_data=image_data)
-        ChatInput.refresh_input_attachments()
+        InputCommon.refresh_input_attachments()
 
 if __name__ == "__main__":
     ft.run(main)
