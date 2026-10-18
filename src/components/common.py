@@ -154,6 +154,52 @@ class MessageUtilsCommon:
             logger.warning(f"ToolMessage has {len(unsupported_blocks)} unsupported content block(s)!")
             logger.debug(f"unsupported content blocks: {unsupported_blocks}")
         return "\n\n".join(markdown_parts).strip()
+
+    @classmethod
+    def format_user_msg_markdown(cls, text: str) -> str:
+        """
+        将用户输入的纯文本转成 Markdown, 尽量保留原始排版
+
+        Note:
+        - Markdown 会把「单个换行」当作软换行折叠成空格, 用户输入的 \n 在界面上看不到效果
+        - 这里给每个非空行的行尾补两个空格 (CommonMark 的硬换行语法), 让换行真正生效
+        - 围栏代码块 (``` / ~~~) 内部本身就是原样渲染, 不补空格, 避免污染用户内容
+        - 已经是硬换行 (行尾两个空格) 或以反斜杠结尾的行不重复补
+
+        Args:
+        - text: 用户输入的原始文本
+
+        Return:
+        - str: 可直接交给 ft.Markdown 渲染的文本
+        """
+        # 非字符串 / 空串: 原样返回, 不对非文本内容做二次加工
+        if not isinstance(text, str) or not text:
+            return text
+
+        # 统一换行符, 避免 Windows 的 \r\n 或旧式 \r 混入
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        finish_lines = []
+        in_fence = False        # 是否处于围栏代码块内部
+        fence_mark = ""         # 当前代码块的围栏标记 (``` 或 ~~~)
+        for line in lines:
+            # 围栏代码块的起止行: 允许 ``` 后跟语言名, 故只比较前三个字符
+            stripped = line.lstrip()
+            if stripped.startswith(("```", "~~~")):
+                mark = stripped[:3]
+                if not in_fence:
+                    in_fence = True
+                    fence_mark = mark
+                elif mark == fence_mark:
+                    in_fence = False
+                finish_lines.append(line)
+                continue
+            # 代码块内部 / 空行 / 已经是硬换行: 原样保留
+            if in_fence or not line.strip() or line.endswith(("  ", "\\")):
+                finish_lines.append(line)
+                continue
+            # 其余行: 行尾补两个空格, 使其成为 Markdown 硬换行
+            finish_lines.append(line + "  ")
+        return "\n".join(finish_lines)
     
     @classmethod
     def session_id_current(cls):
@@ -210,7 +256,9 @@ class MessageBlockCommon:
         images = []
         for i in user_msg:
             if i["type"] == "text":
-                text = i["text"]
+                # 用户输入的是纯文本, 单个 \n 会被 Markdown 折叠成空格
+                # -> 先转成带硬换行的 Markdown, 尽量保留原始排版
+                text = MessageUtilsCommon.format_user_msg_markdown(i["text"])
             if i["type"] == "image":
                 images.append(i["url"])
 
@@ -225,49 +273,58 @@ class MessageBlockCommon:
             border_radius=5,
         )
 
-        # 截图数据
-        user_msg_images = ft.Container(ft.Row(wrap=True))
-        for img in images:
-            user_msg_images.content.controls.append(
-                ft.Image(
-                    src=img, 
-                    # https://flet.dev/docs/controls/image#flet.Image.fit
-                    # https://flet.dev/docs/types/boxfit/
-                    fit=ft.BoxFit.SCALE_DOWN,
-                )
-            )
-
         # 组装组件
+        # -> ft.Column.controls 的类型是 list[Control], 塞 None 不会被跳过而是留下一个占位块
+        # -> 所以图片行按需构建: 有截图时才造、才 append
+        column_controls = []
+
+        # 截图数据
+        if images:
+            user_msg_images = ft.Row(wrap=True)
+            for img in images:
+                user_msg_images.controls.append(
+                    ft.Image(
+                        src=img, 
+                        # https://flet.dev/docs/controls/image#flet.Image.fit
+                        # https://flet.dev/docs/types/boxfit/
+                        fit=ft.BoxFit.SCALE_DOWN,
+                    )
+                )
+            column_controls.append(user_msg_images)
+
+        # 用户消息体 + 操作按钮
+        column_controls.append(user_msg_body)
+        column_controls.append(
+            ft.Row(
+                controls=[
+                    # 复制按钮
+                    ft.Container(
+                        content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
+                        width=18,
+                        height=18,
+                    ),
+                    # 重试按钮
+                    ft.Container(
+                        # ft.Icons.REFRESH / ft.Icons.LOOP
+                        content=ft.IconButton(
+                            icon=ft.Icons.AUTORENEW,
+                            icon_size=14,
+                            padding=0,
+                            on_click=on_retry,
+                        ),
+                        width=18,
+                        height=18,
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.END,
+                spacing=5,
+            )
+        )
+
         user_msg_blk = ft.Container(
             ft.Column(
-                controls=[
-                    user_msg_images if images is not [] else None,
-                    user_msg_body,
-                    ft.Row(
-                        controls=[
-                            # 复制按钮
-                            ft.Container(
-                                content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
-                                width=18,
-                                height=18,
-                            ),
-                            # 重试按钮
-                            ft.Container(
-                                # ft.Icons.REFRESH / ft.Icons.LOOP
-                                content=ft.IconButton(
-                                    icon=ft.Icons.AUTORENEW,
-                                    icon_size=14,
-                                    padding=0,
-                                    on_click=on_retry,
-                                ),
-                                width=18,
-                                height=18,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.END,
-                        spacing=5,
-                    )
-                ],
+                # 上述组件的集合体
+                controls=column_controls,
                 spacing=5,
             ),
             data={"msg_type": "user_msg", "user_msg": user_msg, "user_msg_id": user_msg_id, "lc_run_id": None},

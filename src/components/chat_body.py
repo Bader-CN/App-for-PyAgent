@@ -113,7 +113,7 @@ class ChatBody:
             logger.exception(e)
 
     @classmethod
-    async def msg_error_mark(cls, chat_session_id: str, astream, e: Exception):
+    async def msg_aborted_post_processing(cls, chat_session_id: str, astream, e: Exception):
         """
         消费流异常时的后处理
         每个 consume_*** 的 except 捕获的异常均在这里统一处理
@@ -146,59 +146,6 @@ class ChatBody:
         # -> 但链式异常 / 多行消息在首行之后还有内容, 只留首行会丢掉
         EndPoints.tmp_msgs[chat_session_id]["detail"] = str(e).strip() or None
         await astream.abort()
-
-    @classmethod
-    async def msg_title_summary(cls, chat_session_id: str):
-        """
-        消息摘要处理函数
-
-        Args:
-        - chat_session_id:  对应会话ID
-        """
-        # 基于 "会话ID" 获取所有的历史消息
-        config = {"configurable": {"thread_id": chat_session_id}}
-        if EndPoints.runtime["lc_agents"].state_graph_chat is None:
-            EndPoints.runtime["lc_agents"].state_graph_chat_update()
-        snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
-        messages = snapshot.values.get("messages", [])
-
-        # 获取指定类型的 messages
-        last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
-        last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
-        if last_user_msg and last_ai_msg:
-            # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
-            summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
-            # 组装消息
-            summary_msgs = [
-                SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
-                HumanMessage(summary_text),
-            ]
-
-        # 调用模型并总结标题
-        if EndPoints.runtime["lc_agents"].agent_summary is None:
-            EndPoints.runtime["lc_agents"].agent_summary_update()
-
-        # 确保话题总结模型不为 None
-        if EndPoints.runtime["lc_agents"].agent_summary is not None:
-            response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
-            summary_title = str(response.text)
-            # 渲染界面
-            sessions = EndPoints.chat["chat_list"].current.controls
-            for session in sessions:
-                if session.data.get("session_id") == chat_session_id:
-                    session.title = ft.Text(summary_title)
-                    session.data["title"] = summary_title
-                    if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                        EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
-                    break
-            EndPoints.root["page"].update()
-            # 保持数据 (sessions 数据类型为 list)
-            sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
-            for idx, session_dict in enumerate(sessions):
-                if session_dict.get("session_id") == chat_session_id:
-                    sessions[idx]["title"] = summary_title
-                    EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
-                    break
 
     @classmethod
     async def msg_update_stream(cls, user_msg):
@@ -283,7 +230,7 @@ class ChatBody:
                         return
             except Exception as e:
                 # 本轮 message 的消费出错: 统一标记 error + 中止本轮流式输出
-                await cls.msg_error_mark(chat_session_id=chat_session_id, astream=astream, e=e)
+                await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
 
         # 并发驱动两个独立投影, 共享一个pump(水泵)
         # - consume_messages           : astream.messages (每条 message 的 reasoning/text/tool_calls)
@@ -373,7 +320,7 @@ class ChatBody:
             sessions = EndPoints.chat["chat_list"].current.controls
             for session in sessions:
                 if session.data.get("session_id") == chat_session_id and session.data.get("title") == EndPoints.runtime["app_util_lang"].translate(key="new_session"):
-                    EndPoints.root["page"].run_task(cls.msg_title_summary, chat_session_id)
+                    EndPoints.root["page"].run_task(cls.callback_msg_title_summary, chat_session_id)
                     break
 
     @classmethod
@@ -430,7 +377,7 @@ class ChatBody:
                         elif msg_dict["type"] == "text":
                             EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_text(lc_run_id=msg_dict["lc_run_id"]))
                             EndPoints.chat["chat_body"].current.content.controls[-1].content.value = msg_dict["text"]
-    
+
     @classmethod
     async def consume_tool_calls_output(cls, astream, chat_session_id):
         """
@@ -493,7 +440,7 @@ class ChatBody:
                                 EndPoints.root["page"].update()
                             break
         except Exception as e:
-            await cls.msg_error_mark(chat_session_id=chat_session_id, astream=astream, e=e)
+            await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
 
     @classmethod
     async def consume_tool_calls_args(cls, message, chat_session_id, lc_run_id, astream):
@@ -564,7 +511,7 @@ class ChatBody:
                     await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
                     EndPoints.root["page"].update()
         except Exception as e:
-            await cls.msg_error_mark(chat_session_id=chat_session_id, astream=astream, e=e)
+            await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
 
     @classmethod
     async def consume_reasoning(cls, message, chat_session_id, lc_run_id, astream):
@@ -612,7 +559,7 @@ class ChatBody:
                     await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
                     EndPoints.root["page"].update()
         except Exception as e:
-            await cls.msg_error_mark(chat_session_id=chat_session_id, astream=astream, e=e)
+            await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
 
     @classmethod
     async def consume_text(cls, message, chat_session_id, lc_run_id, astream):
@@ -662,7 +609,60 @@ class ChatBody:
                     await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
                     EndPoints.root["page"].update()
         except Exception as e:
-            await cls.msg_error_mark(chat_session_id=chat_session_id, astream=astream, e=e)
+            await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
+
+    @classmethod
+    async def callback_msg_title_summary(cls, chat_session_id: str, e=None):
+        """
+        消息摘要处理函数
+
+        Args:
+        - chat_session_id:  对应会话ID
+        """
+        # 基于 "会话ID" 获取所有的历史消息
+        config = {"configurable": {"thread_id": chat_session_id}}
+        if EndPoints.runtime["lc_agents"].state_graph_chat is None:
+            EndPoints.runtime["lc_agents"].state_graph_chat_update()
+        snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
+        messages = snapshot.values.get("messages", [])
+
+        # 获取指定类型的 messages
+        last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+        last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
+        if last_user_msg and last_ai_msg:
+            # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
+            summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
+            # 组装消息
+            summary_msgs = [
+                SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
+                HumanMessage(summary_text),
+            ]
+
+        # 调用模型并总结标题
+        if EndPoints.runtime["lc_agents"].agent_summary is None:
+            EndPoints.runtime["lc_agents"].agent_summary_update()
+
+        # 确保话题总结模型不为 None
+        if EndPoints.runtime["lc_agents"].agent_summary is not None:
+            response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
+            summary_title = str(response.text)
+            # 渲染界面
+            sessions = EndPoints.chat["chat_list"].current.controls
+            for session in sessions:
+                if session.data.get("session_id") == chat_session_id:
+                    session.title = ft.Text(summary_title)
+                    session.data["title"] = summary_title
+                    if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
+                        EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
+                    break
+            EndPoints.root["page"].update()
+            # 保持数据 (sessions 数据类型为 list)
+            sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
+            for idx, session_dict in enumerate(sessions):
+                if session_dict.get("session_id") == chat_session_id:
+                    sessions[idx]["title"] = summary_title
+                    EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
+                    break
 
     @classmethod
     async def callback_msg_retry(cls, e):
