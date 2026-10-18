@@ -3,6 +3,7 @@ import flet as ft
 from src.endpoints import EndPoints
 from src.components.chat_body import ChatBody
 from src.components.common import AlertCommon
+from src.components.common import MessageBlockCommon
 from src.utils.logging import logger
 
 
@@ -209,7 +210,7 @@ class ChatInput:
             # user_msg 不能是非空
             if user_msg:
                 # 渲染 user_msg
-                user_msg_blk = ChatBody.build_blk_user_msg(user_msg=user_msg)
+                user_msg_blk = MessageBlockCommon.build_blk_user_msg(user_msg=user_msg, on_retry=ChatBody.callback_msg_retry)
                 EndPoints.chat["chat_body"].current.content.controls.append(user_msg_blk)
                 # 清空内容和附件
                 EndPoints.input["input_textfield"].current.value = None
@@ -243,9 +244,10 @@ class ChatInput:
             # -> 收尾要先等 asyncio.gather 返回, 而工具静默期没有任何 delta, 可能要干等几秒 (实测 3.5s)
             # -> 按钮回调是同步且即时的, 放这里用户一按就能看到
             # -> 因此收尾那边只负责 error 的渲染 (aborted 已在本次处理, 避免重复)
-            EndPoints.chat["chat_body"].current.content.controls.append(ChatBody.build_blk_err_msg(
+            EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_err_msg(
                 reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
                 status="aborted",
+                on_retry=ChatBody.callback_msg_retry,
             ))
             # 恢复发送按钮
             ft_btn.icon = ft.Icons.SEND

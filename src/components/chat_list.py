@@ -3,7 +3,8 @@ import flet as ft
 from src.endpoints import EndPoints
 from src.components.chat_header import ChatHeader
 from src.components.chat_body import ChatBody
-from src.components.common import MessageCommon
+from src.components.common import MessageUtilsCommon
+from src.components.common import MessageBlockCommon
 from src.components.common import InputCommon
 from src.utils.logging import logger
 from langchain.messages import HumanMessage, AIMessage, ToolMessage
@@ -250,7 +251,7 @@ class ChatList:
         if not isinstance(msg_group[-1], AIMessage):
             return False
         # 归一化最后一条 AIMessage 里的 content
-        ai_msg_blk = MessageCommon.ai_msg_format_content(ai_msg=msg_group[-1])
+        ai_msg_blk = MessageUtilsCommon.format_ai_msg_content(ai_msg=msg_group[-1])
         # 聚合: ai_msg_blk 不为空 & ai_msg_blk[-1] 的类型必须是 text
         return bool(ai_msg_blk) and ai_msg_blk[-1].get("type") == "text"
 
@@ -266,7 +267,7 @@ class ChatList:
         # 当前界面的所有控件
         controls = EndPoints.chat["chat_body"].current.content.controls
         # AI Summary 块 (仅在聚合时创建)
-        blk_ai_summary = ChatBody.build_blk_ai_summary() if merge else None
+        blk_ai_summary = MessageBlockCommon.build_blk_ai_summary() if merge else None
         # 标记位: AI Summary 是否已经挂到界面上 (保证只挂一次)
         summary_appended = False
 
@@ -294,24 +295,24 @@ class ChatList:
         for idx, message in enumerate(group):
             if not isinstance(message, AIMessage):
                 continue
-            aimsg_content = MessageCommon.ai_msg_format_content(ai_msg=message)
+            aimsg_content = MessageUtilsCommon.format_ai_msg_content(ai_msg=message)
             is_last_message = idx == len(group) - 1
             for bidx, msg in enumerate(aimsg_content):
                 # 该块的挂载位置: 聚合时进 AI Summary, 平铺时直接进界面
                 into_summary = merge
                 if msg["type"] == "reasoning":
-                    blk = ChatBody.build_blk_ai_reasoning(reasoning=msg["reasoning"], lc_run_id=message.id)
+                    blk = MessageBlockCommon.build_blk_ai_reasoning(reasoning=msg["reasoning"], lc_run_id=message.id)
                 elif msg["type"] == "tool_call":
-                    blk = ChatBody.build_blk_ai_tool_call(args_dict=msg, lc_run_id=message.id)
+                    blk = MessageBlockCommon.build_blk_ai_tool_call(args_dict=msg, lc_run_id=message.id)
                 elif msg["type"] == "text":
                     # 只有「末条消息的最后一个 text 块」才是这一轮真正的结尾
                     if is_last_message and bidx == len(aimsg_content) - 1:
                         _summary_append()   # 先挂 AI Summary, 再挂最终结果 (保证先后顺序)
                         into_summary = False
-                        blk = ChatBody.build_blk_ai_text_finally(text=msg["text"], lc_run_id=message.id)
+                        blk = MessageBlockCommon.build_blk_ai_text_finally(text=msg["text"], lc_run_id=message.id, on_retry=ChatBody.callback_msg_retry)
                     # 其余 text 都属于中间过程
                     else:
-                        blk = ChatBody.build_blk_ai_text(text=msg["text"], lc_run_id=message.id)
+                        blk = MessageBlockCommon.build_blk_ai_text(text=msg["text"], lc_run_id=message.id)
                 else:
                     logger.error(f"unknown message type: {msg}")
                     continue
@@ -337,7 +338,7 @@ class ChatList:
                     and control.data.get("tool_call_id") == message.tool_call_id
                 ), None)
                 if blk is not None:
-                    blk.content.controls = [ft.Markdown(value=MessageCommon.tool_msg_format_markdown(tool_msg=message))]
+                    blk.content.controls = [ft.Markdown(value=MessageUtilsCommon.format_tool_msg_markdown(tool_msg=message))]
                     break
             else:
                 logger.warning(f"ToolMessage has no matched tool_call block: {message.tool_call_id}")
@@ -385,7 +386,7 @@ class ChatList:
         for group in all_group:
             if isinstance(group, HumanMessage):
                 # HumanMessage 仅构建一个消息块即可
-                blk_user_msg = ChatBody.build_blk_user_msg(user_msg=group.content, user_msg_id=None)
+                blk_user_msg = MessageBlockCommon.build_blk_user_msg(user_msg=group.content, user_msg_id=None, on_retry=ChatBody.callback_msg_retry)
                 EndPoints.chat["chat_body"].current.content.controls.append(blk_user_msg)
             else:
                 # 渲染一个消息块
@@ -409,8 +410,10 @@ class ChatList:
 
         # 如果当前会话已意外终止 (error / aborted), 则补一个错误块
         if session_id == EndPoints.runtime["session_id_chat_current"] and EndPoints.tmp_msgs.get(session_id, {}).get("status") in ("error", "aborted"):
-            EndPoints.chat["chat_body"].current.content.controls.append(ChatBody.build_blk_err_msg(
+            EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_err_msg(
                 reason=EndPoints.tmp_msgs[session_id]["reason"],
                 status=EndPoints.tmp_msgs[session_id]["status"],
+                errmsg=EndPoints.tmp_msgs[session_id].get("detail"),
+                on_retry=ChatBody.callback_msg_retry,
             ))
             EndPoints.root["page"].update()

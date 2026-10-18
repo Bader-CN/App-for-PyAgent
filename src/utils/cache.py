@@ -45,7 +45,8 @@ class CacheUtils:
         EndPoints.tmp_msgs[session_id] = {
             "status": status,           # 缓存的会话状态, 值可以是 "start/stop/error/aborted/reasoning/tool_call/text"
             "aimsgs": [],               # 缓存的会话数据
-            "reason": None,             # 异常停止的原因, 当 status 为 error/aborted 时要更新此值
+            "reason": None,             # 异常停止的原因 (首行), 当 status 为 error/aborted 时要更新此值; 用于消息块标题
+            "detail": None,             # 异常停止的完整文本 (多行), 用于消息块展开后的详情
             "click_count": 1,           # 每次点击该会话就+1
             "rendered_click_count": 1,  # 必须渲染完历史会话才和 click_count 同步
         }
@@ -107,21 +108,30 @@ class CacheUtils:
                 for session_id in list(self.tmp_msgs_state_dict):
                     if EndPoints.tmp_msgs.get(session_id) is None:
                         self.tmp_msgs_init(session_id=session_id)
-                    # 仅同步这两项足够
+                    # 仅同步这三项足够
+                    # -> detail 用 .get(): 兼容本字段出现之前写入的旧文件 (无该 key)
                     EndPoints.tmp_msgs[session_id]["status"] = self.tmp_msgs_state_dict[session_id]["status"]
-                    EndPoints.tmp_msgs[session_id]["reason"] = self.tmp_msgs_state_dict[session_id]["reason"]
+                    EndPoints.tmp_msgs[session_id]["reason"] = self.tmp_msgs_state_dict[session_id].get("reason")
+                    EndPoints.tmp_msgs[session_id]["detail"] = self.tmp_msgs_state_dict[session_id].get("detail")
         except Exception as e:
             logger.error(e)
 
-    def tmp_msgs_state_update(self, session_id, status, reason=None):
+    def tmp_msgs_state_update(self, session_id, status, reason=None, detail=None):
         """
         更新 tmp_msgs state 文件缓存: 基于指定的 session_id
+
+        Args:
+        - session_id:   会话ID
+        - status:       会话状态
+        - reason:       异常原因 (首行), 对应消息块标题
+        - detail:       异常完整文本 (多行), 对应消息块展开后的详情
         """
         if self.tmp_msgs_state_dict.get(session_id) is None:
-            self.tmp_msgs_state_dict[session_id] = {"status": status, "reason": reason}
+            self.tmp_msgs_state_dict[session_id] = {"status": status, "reason": reason, "detail": detail}
         else:
             self.tmp_msgs_state_dict[session_id]["status"] = status
             self.tmp_msgs_state_dict[session_id]["reason"] = reason
+            self.tmp_msgs_state_dict[session_id]["detail"] = detail
         self.tmp_msgs_state_save()
 
     def tmp_msgs_state_del(self, session_id):

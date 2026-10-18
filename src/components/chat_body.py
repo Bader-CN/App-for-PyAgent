@@ -1,12 +1,12 @@
-import copy
 import json
 import uuid
 import asyncio
 import flet as ft
-from typing import List, Dict, Any
+from typing import Dict
 from src.endpoints import EndPoints
 from src.components.common import AlertCommon
-from src.components.common import MessageCommon
+from src.components.common import MessageUtilsCommon
+from src.components.common import MessageBlockCommon
 from src.utils.logging import logger
 from langchain.messages import SystemMessage, HumanMessage, AIMessage, RemoveMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
@@ -16,395 +16,6 @@ class ChatBody:
     """
     对话消息
     """
-    @classmethod
-    def build_blk_err_msg(cls, reason: str, status="error", errmsg=None):
-        """
-        构建一个显示错误的消息块
-
-        Args:
-        - reason:   错误的原因概述, 中止场景为翻译文案
-        - status:   错误的状态, 值可以是 error / aborted
-        - errmsg:   错误信息详情, 不传时中止场景用固定文案 / 错误场景复用 reason
-        """
-        if status == "aborted" and errmsg is None:
-            errmsg = EndPoints.runtime["app_util_lang"].translate(key="request_was_aborted_desc")
-        elif errmsg is None:
-            # 错误场景的 reason 本身就是异常首行, 直接复用为详情 (缺省而不是塞一句英文占位)
-            errmsg = reason
-
-        err_blk = ft.Container(
-            content=ft.ExpansionTile(
-                title=ft.Row(
-                    controls=[
-                        ft.Icon(ft.Icons.WARNING, size=18) if status == "aborted" else ft.Icon(ft.Icons.ERROR, size=18),
-                        ft.Text(value=reason, style=ft.TextStyle(color=ft.Colors.ORANGE if status == "aborted" else ft.Colors.RED)),
-                    ],
-                    spacing=3,
-                ),
-                subtitle=ft.Row(
-                    controls=[
-                        # 复制按钮: 用于复制错误详情
-                        ft.TextButton(
-                            content=ft.Text(
-                                value=EndPoints.runtime["app_util_lang"].translate(key="copy"),
-                                style=ft.TextStyle(color=ft.Colors.BLACK, size=12),
-                            ),
-                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5)),
-                            height=26,
-                        ),
-                        # 重试按钮: 用于重新发送消息
-                        ft.TextButton(
-                            content=ft.Text(
-                                value=EndPoints.runtime["app_util_lang"].translate(key="retry"),
-                                style=ft.TextStyle(color=ft.Colors.BLACK, size=12),
-                            ),
-                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=5)),
-                            on_click=cls.callback_msg_retry,
-                            height=26,
-                        ),
-                    ],
-                    alignment=ft.MainAxisAlignment.END,
-                    spacing=5,
-                ),
-                dense=True,
-                tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
-                # ExpansionTile 控件可以通过这种方式来自己绘制边框
-                # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
-                # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
-                shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.ORANGE if status == "aborted" else ft.Colors.RED), radius=5),
-                collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.ORANGE if status == "aborted" else ft.Colors.RED), radius=5),
-                # 错误详情
-                controls=[
-                    ft.Markdown(
-                        value=errmsg,
-                        selectable=True, # 允许用户选中复制
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                        code_theme=ft.MarkdownCodeTheme.GITHUB,
-                    ),
-                ],
-            ),
-            data={"msg_type": "err_msg", "lc_run_id": None},
-        )
-        return err_blk
-    
-    @classmethod
-    def build_blk_user_msg(cls, user_msg: List[Dict], user_msg_id=None):
-        """
-        构建一个 User 消息块, 格式参考了如下文档
-        https://docs.langchain.com/oss/python/langchain/messages#multimodal
-
-        Args:
-        - user_msg:     多模态的用户消息内容, 参考了 HumanMessage 的格式: [{"type": "text", "text": ***}]
-        - user_msg_id:  用户消息的唯一标识符, 如果 user_msg 的数据类型为 HumanMessage, 则忽略传入的值, 否则不传则会自动生成
-
-        Return:
-        - Flet Container 控件对象
-        """
-        # 整理消息
-        text = ""
-        images = []
-        for i in user_msg:
-            if i["type"] == "text":
-                text = i["text"]
-            if i["type"] == "image":
-                images.append(i["url"])
-
-        # 用户消息体控件
-        user_msg_body = ft.Container(
-            ft.Markdown(
-                value=text,
-            ),
-            padding=ft.Padding.symmetric(vertical=3, horizontal=5),
-            border=ft.border.Border.all(width=1, color=ft.Colors.GREEN_200),
-            bgcolor=ft.Colors.GREEN_100,
-            border_radius=5,
-        )
-
-        # 截图数据
-        user_msg_images = ft.Container(ft.Row(wrap=True))
-        for img in images:
-            user_msg_images.content.controls.append(
-                ft.Image(
-                    src=img, 
-                    # https://flet.dev/docs/controls/image#flet.Image.fit
-                    # https://flet.dev/docs/types/boxfit/
-                    fit=ft.BoxFit.SCALE_DOWN,
-                )
-            )
-
-        # 组装组件
-        user_msg_blk = ft.Container(
-            ft.Column(
-                controls=[
-                    user_msg_images if images is not [] else None,
-                    user_msg_body,
-                    ft.Row(
-                        controls=[
-                            # 复制按钮
-                            ft.Container(
-                                content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
-                                width=18,
-                                height=18,
-                            ),
-                            # 重试按钮
-                            ft.Container(
-                                # ft.Icons.REFRESH / ft.Icons.LOOP
-                                content=ft.IconButton(
-                                    icon=ft.Icons.AUTORENEW,
-                                    icon_size=14,
-                                    padding=0,
-                                    on_click=cls.callback_msg_retry,
-                                ),
-                                width=18,
-                                height=18,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.END,
-                        spacing=5,
-                    )
-                ],
-                spacing=5,
-            ),
-            data={"msg_type": "user_msg", "user_msg": user_msg, "user_msg_id": user_msg_id, "lc_run_id": None},
-            # border=ft.border.Border.all(width=1, color=ft.Colors.GREY_500),
-            # border_radius=5,
-        )
-        # 调整日志显示内容
-        show_user_msg = copy.deepcopy(user_msg)
-        idx = 1
-        for msg in show_user_msg:
-            if msg["type"] == "image":
-                msg["url"] = f"image_{idx}"
-                idx += 1
-        logger.warning(show_user_msg)
-        return user_msg_blk
-
-    @classmethod
-    def build_blk_ai_reasoning(cls, reasoning="", lc_run_id=None, blk_status="finish", reasoning_high=50):
-        """
-        构建一个 AI 思考消息块
-
-        Args:
-        - reasoning:        思考内容
-        - lc_run_id:        LangChain AIMessage 里面的 Internal tracing/callback ID, Reasoning 包含在 AIMessage 中
-        - blk_status:       块状态, finish 表示思考内容已经完成, 其余任何值均属于未完成
-        - reasoning_high:   思考块在关闭刷新时的最高高度
-
-        Return:
-        - Flet Container 控件对象
-        """
-        # 设定思考中的相关控件
-        #############################################################################
-        def _on_reasoning_text_size(e):
-            """
-            动态调整高度的回调函数
-            e.height 为该 Text 的完整自然高, 用 min 封顶到指定高度
-            """
-            new_h = min(int(e.height or 0), reasoning_high)
-            if new_h != reasoning_subtitle.height:
-                reasoning_subtitle.height = new_h
-                reasoning_subtitle.update()
-
-        # 将 ft.Text 包裹在一个可混动的  ft.Column 中
-        reasoning_subtitle = ft.Column(
-            controls=[
-                # ft.Text 不设 max_lines/overflow, 让它在滚动视图里按完整内容布局
-                # 这样 on_size_change 时才能读到 "全文自然高"
-                ft.Text(
-                    value=reasoning,
-                    selectable=True,
-                    size_change_interval=0,
-                    on_size_change=_on_reasoning_text_size,
-                ),
-            ],
-            scroll=ft.ScrollMode.HIDDEN,    # 隐藏滚动条, 仍可滚动, 用 auto_scroll 跟随
-            auto_scroll=True,
-            auto_scroll_animation=0,        # token 级流式, 瞬时跳底, 避免动画滞后
-            height=reasoning_high,
-        )
-        #############################################################################
-
-        reasoning_blk = ft.Container(
-            ft.ExpansionTile(
-                dense=True,
-                title=ft.Row(
-                    controls=[
-                        ft.Icon(ft.Icons.LIGHTBULB_CIRCLE_ROUNDED, size=18),
-                        ft.Text(value=EndPoints.runtime["app_util_lang"].translate(key="reasoning") if blk_status != "finish" else EndPoints.runtime["app_util_lang"].translate(key="reason_finish")),
-                    ],
-                    spacing=3,
-                ),
-                tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
-                subtitle=reasoning_subtitle if blk_status != "finish" else None,
-                controls=[
-                    ft.Markdown(
-                        value=reasoning,
-                        selectable=True, # 允许用户选中复制
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                        code_theme=ft.MarkdownCodeTheme.GITHUB,
-                    ),
-                ],
-                # 保持控件状态, 防止展开后重新渲染引发的闪烁
-                maintain_state=True,
-                expanded_alignment=ft.Alignment.BOTTOM_LEFT,
-                # ExpansionTile 控件可以通过这种方式来自己绘制边框
-                # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
-                # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
-                shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
-                collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
-            ),
-            data={"msg_type": "reasoning", "lc_run_id": lc_run_id},
-        )
-        return reasoning_blk
-
-    @classmethod
-    def build_blk_ai_tool_call(cls, args_dict, lc_run_id=None):
-        """
-        构建一个 AI Tool Call 消息块
-
-        Args:
-        - args_dict:    Tool Call 的参数字典
-        - lc_run_id:    LangChain AIMessage 里面的 Internal tracing/callback ID, Tool Call 的参数包含在 AIMessage 中
-
-        Return:
-        - Flet Container 控件对象
-        """
-        tool_call_blk = ft.Container(
-            ft.ExpansionTile(
-                dense=True,
-                title=ft.Row(
-                    controls=[
-                        ft.Icon(ft.Icons.BUILD_CIRCLE_ROUNDED, size=18),
-                        ft.Text(value=f"{args_dict.get("name")}"),
-                    ],
-                    spacing=3,
-                ),
-                tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
-                subtitle=ft.Text(
-                    value=f"{args_dict.get("args")}", 
-                    size=11,
-                    color=ft.Colors.GREY_600,
-                ),
-                # ExpansionTile 控件可以通过这种方式来自己绘制边框
-                # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
-                # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
-                shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
-                collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
-            ),
-            data={"msg_type": "tool_call", "lc_run_id": lc_run_id, "tool_call_id": args_dict.get("id")},
-        )
-        # 补充结果
-        if args_dict.get("tool_result"):
-            tool_call_blk.content.controls = ft.Markdown(value=args_dict.get("tool_result"))
-            
-        return tool_call_blk
-
-    @classmethod
-    def build_blk_ai_text(cls, text="", lc_run_id=None):
-        """
-        构建一个 AI 消息块 (中间的输出)
-
-        Args:
-        - text:         AI 消息内容
-        - lc_run_id:    LangChain AIMessage 里面的 Internal tracing/callback ID
-
-        Note:
-        不设 expand/expand_loose: 它们只作用于「直接父控件的主轴」
-        而本块的父控件是 chat_body 那个滚动 Column (主轴=竖直且无界)
-        -> 既不撑宽度, 也不撑高度, 是误导性死代码
-        -> 横向铺满由该 Column 的 horizontal_alignment=STRETCH 负责
-        -> 实际布局见 chat_view.render_lv2
-
-        Return:
-        - Flet Container 控件对象
-        """
-        ai_msg_blk = ft.Container(
-            ft.Markdown(
-                value=text,
-                selectable=True,
-            ),
-            data={"msg_type": "text", "lc_run_id": lc_run_id},
-            padding=ft.Padding.symmetric(vertical=3, horizontal=5),
-            border=ft.border.Border.all(width=1, color=ft.Colors.GREY_500),
-            border_radius=5,
-        )
-        return ai_msg_blk
-
-    @classmethod
-    def build_blk_ai_text_finally(cls, text="", lc_run_id=None):
-        """
-        构建一个 AI 消息块 (仅针对最后的输出内容)
-
-        Args:
-        - text:         AI 消息内容
-        - lc_run_id:    LangChain AIMessage 里面的 Internal tracing/callback ID
-
-        Note:
-        不设 expand/expand_loose: 它们只作用于「直接父控件的主轴」
-        而本块的父控件是 chat_body 那个滚动 Column (主轴=竖直且无界)
-        -> 既不撑宽度, 也不撑高度, 是误导性死代码
-        -> 横向铺满由该 Column 的 horizontal_alignment=STRETCH 负责
-        -> 实际布局见 chat_view.render_lv2
-
-        Return:
-        - Flet Container 控件对象
-        """
-        ai_msg_blk = ft.Container(
-            ft.Column(
-                controls=[
-                    ft.Markdown(
-                        value=text,
-                        selectable=True,
-                    ),
-                    ft.Row(
-                        controls=[
-                            # 复制按钮
-                            ft.Container(
-                                content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
-                                width=18,
-                                height=18,
-                            ),
-                            # 重试按钮
-                            ft.Container(
-                                # ft.Icons.REFRESH / ft.Icons.LOOP
-                                content=ft.IconButton(icon=ft.Icons.AUTORENEW, icon_size=14, padding=0, on_click=cls.callback_msg_retry),
-                                width=18,
-                                height=18,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.END,
-                        spacing=5,
-                    )
-                ],
-                spacing=5,
-            ),
-            data={"msg_type": "text", "lc_run_id": lc_run_id},
-            padding=ft.Padding.symmetric(vertical=3, horizontal=0),
-        )
-        return ai_msg_blk
-
-    @classmethod
-    def build_blk_ai_summary(cls):
-        """
-        构建一个 AI 中间 思考/工具调用 的总结块
-        """
-        ai_summary_blk = ft.Container(
-            ft.ExpansionTile(
-                dense=True,
-                title="AI Summary",
-                tile_padding=ft.Padding.symmetric(vertical=0, horizontal=11),
-                # 添加一个 ft.Column 控件, 因为 ft.ExpansionTile 不支持调整控件的间距
-                controls=[ft.Column(margin=ft.Margin.symmetric(horizontal=5, vertical=5), spacing=5)],
-                # ExpansionTile 控件可以通过这种方式来自己绘制边框
-                # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
-                # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
-                shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5,),
-                collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
-            ),
-            data={"msg_type": "ai_summary", "lc_run_id": None},
-        )
-        return ai_summary_blk
-
     @classmethod
     async def msg_aborted_save(cls, chat_session_id: str):
         """
@@ -527,8 +138,13 @@ class ChatBody:
         # 首次调用异常, 记录异常并终止流式输出
         logger.exception(e)
         EndPoints.tmp_msgs[chat_session_id]["status"] = "error"
-        err_line = str(e).strip().splitlines()
-        EndPoints.tmp_msgs[chat_session_id]["reason"] = err_line[0] if err_line else type(e).__name__
+        err_lines = str(e).strip().splitlines()
+        # reason: 首行, 用于消息块标题 (单行摘要)
+        EndPoints.tmp_msgs[chat_session_id]["reason"] = err_lines[0] if err_lines else type(e).__name__
+        # detail: 完整异常文本 (可能多行), 用于消息块展开后的详情
+        # -> OpenAI 的 400 响应会把服务端返回的整段 JSON 塞在一行里, 首行也就等于全文
+        # -> 但链式异常 / 多行消息在首行之后还有内容, 只留首行会丢掉
+        EndPoints.tmp_msgs[chat_session_id]["detail"] = str(e).strip() or None
         await astream.abort()
 
     @classmethod
@@ -701,12 +317,15 @@ class ChatBody:
                 session_id=chat_session_id,
                 status=EndPoints.tmp_msgs[chat_session_id]["status"],
                 reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
+                detail=EndPoints.tmp_msgs[chat_session_id]["detail"],
             )
             # 确保是本次会话
             if EndPoints.tmp_msgs[chat_session_id]["status"] == "error" and chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_err_msg(
+                EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_err_msg(
                     reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
                     status="error",
+                    errmsg=EndPoints.tmp_msgs[chat_session_id].get("detail"),
+                    on_retry=cls.callback_msg_retry,
                 ))
                 EndPoints.root["page"].update()
         # 正常结束
@@ -720,11 +339,12 @@ class ChatBody:
                 chat_number = len(EndPoints.tmp_msgs[chat_session_id]["aimsgs"])
                 need_finally = True  # 最后一条是否需要替换为 blk_ai_finally
                 if chat_number > 2:
-                    blk_ai_finally = cls.build_blk_ai_text_finally(
+                    blk_ai_finally = MessageBlockCommon.build_blk_ai_text_finally(
                         text=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"),
                         lc_run_id=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("lc_run_id"),
+                        on_retry=cls.callback_msg_retry,
                     )
-                    blk_ai_summary = cls.build_blk_ai_summary()
+                    blk_ai_summary = MessageBlockCommon.build_blk_ai_summary()
                     controls = EndPoints.chat["chat_body"].current.content.controls[-chat_number:-1]
                     for control in controls:
                         blk_ai_summary.content.controls[0].controls.append(control)
@@ -733,9 +353,10 @@ class ChatBody:
                     EndPoints.chat["chat_body"].current.content.controls.append(blk_ai_finally)
                     need_finally = False
                 elif need_finally and EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"):
-                    blk_ai_finally = cls.build_blk_ai_text_finally(
+                    blk_ai_finally = MessageBlockCommon.build_blk_ai_text_finally(
                         text=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"),
                         lc_run_id=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("lc_run_id"),
+                        on_retry=cls.callback_msg_retry,
                     )
                     EndPoints.chat["chat_body"].current.content.controls[-1] = blk_ai_finally
                     
@@ -770,16 +391,16 @@ class ChatBody:
             or EndPoints.chat["chat_body"].current.content.controls[-1].data.get("msg_type") == "user_msg":
             for idx, msg_dict in enumerate(msgs, start=1):
                 if msg_dict["type"] == "reasoning" and idx != total_msgs:   # 该思考块非最后一个 (不需要副标题)
-                    EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"]))
+                    EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"]))
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.controls[0].value = msg_dict["reasoning"]
                 elif msg_dict["type"] == "reasoning" and idx == total_msgs: # 该思考块是最后一个 (需要副标题)
-                    EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"], blk_status="start"))
+                    EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"], blk_status="start"))
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.subtitle.controls[0].value = msg_dict["reasoning"]
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.controls[0].value = msg_dict["reasoning"]
                 elif msg_dict["type"] == "tool_call":
-                    EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
+                    EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
                 elif msg_dict["type"] == "text":
-                    EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_text(lc_run_id=msg_dict["lc_run_id"]))
+                    EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_text(lc_run_id=msg_dict["lc_run_id"]))
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.value = msg_dict["text"]
         # 存在历史消息块, 但最后一个消息块不是 user_msg
         else:
@@ -794,20 +415,20 @@ class ChatBody:
                         EndPoints.chat["chat_body"].current.content.controls[-1].content.subtitle.controls[0].value = msg_dict["reasoning"]
                         EndPoints.chat["chat_body"].current.content.controls[-1].content.controls[0].value = msg_dict["reasoning"]
                     elif msg_dict["type"] == "tool_call":
-                        EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
+                        EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
                     elif msg_dict["type"] == "text":
                         EndPoints.chat["chat_body"].current.content.controls[-1].content.value = msg_dict["text"]
                 # 需要新建消息块: 因为 idx !=1, 因此 last_container 和 msgs 之间存在差异
                 elif msg_dict["type"] == last_msg_type and msg_dict["lc_run_id"] == last_lc_run_id:
                     for msg_dict in msgs[-idx+1:]:
                         if msg_dict["type"] == "reasoning":
-                            EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"], blk_status="start"))
+                            EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_reasoning(lc_run_id=msg_dict["lc_run_id"], blk_status="start"))
                             EndPoints.chat["chat_body"].current.content.controls[-1].content.subtitle.controls[0].value = msg_dict["reasoning"]
                             EndPoints.chat["chat_body"].current.content.controls[-1].content.controls[0].value = msg_dict["reasoning"]
                         elif msg_dict["type"] == "tool_call":
-                            EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
+                            EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_tool_call(args_dict=msg_dict, lc_run_id=msg_dict["lc_run_id"]))
                         elif msg_dict["type"] == "text":
-                            EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_text(lc_run_id=msg_dict["lc_run_id"]))
+                            EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_text(lc_run_id=msg_dict["lc_run_id"]))
                             EndPoints.chat["chat_body"].current.content.controls[-1].content.value = msg_dict["text"]
     
     @classmethod
@@ -864,7 +485,7 @@ class ChatBody:
                     for idx, msg in enumerate(reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]), start=1):
                         # 更新数据
                         if msg["type"] == "tool_call" and msg["tool_call_id"] == tool_out.tool_call_id:
-                            tool_markdown = MessageCommon.tool_msg_format_markdown(tool_msg=tool_out)
+                            tool_markdown = MessageUtilsCommon.format_tool_msg_markdown(tool_msg=tool_out)
                             msg["tool_result"] = tool_markdown
                             # 渲染界面 (面板尾部就是本轮的块)
                             if is_current and is_synced:
@@ -927,7 +548,7 @@ class ChatBody:
                     EndPoints.tmp_msgs[chat_session_id]["aimsgs"].append(tgt_tool_msg)
                     # 渲染界面 (非切换重建)
                     if is_current and is_synced:
-                        EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id))
+                        EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id))
                 # 基于 chunk.get("id") 来更新 数据 / Flet 控件
                 for idx, msg in enumerate(reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]), start=1):
                     if msg["type"] == "tool_call" and msg["tool_call_id"] == chunk.get("id"):
@@ -936,7 +557,7 @@ class ChatBody:
                                 tgt_tool_msg[k] = v
                         # 渲染界面 (非切换重建)
                         if is_current and is_synced:
-                            EndPoints.chat["chat_body"].current.content.controls[-idx] = cls.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
+                            EndPoints.chat["chat_body"].current.content.controls[-idx] = MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
                         break
                 # 渲染界面 (面板尾部就是本轮的块)
                 if is_current and is_synced:
@@ -978,7 +599,7 @@ class ChatBody:
                     EndPoints.tmp_msgs[chat_session_id]["aimsgs"].append({"type": "reasoning", "reasoning": "", "lc_run_id": lc_run_id})
                     # 渲染界面 (非切换重建)
                     if is_current and is_synced:
-                        EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_reasoning(lc_run_id=lc_run_id, blk_status="start"))
+                        EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_reasoning(lc_run_id=lc_run_id, blk_status="start"))
                 # 更新数据
                 EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1]["reasoning"] += delta
                 # 渲染界面 (非切换重建): 面板尾部就是本块 -> 原地叠加即可
@@ -1032,7 +653,7 @@ class ChatBody:
                     EndPoints.tmp_msgs[chat_session_id]["aimsgs"].append({"type": "text", "text": "", "lc_run_id": lc_run_id})
                     # 渲染界面 (非切换重建)
                     if is_current and is_synced:
-                        EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_ai_text(lc_run_id=lc_run_id))
+                        EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_text(lc_run_id=lc_run_id))
                 # 更新数据
                 EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1]["text"] += delta
                 # 渲染界面 (面板尾部就是本轮的块)
@@ -1141,10 +762,11 @@ class ChatBody:
                 # 还原: 上面的「抢占」把它置成了 start, 但本轮并没有真正开始
                 # 不还原后续重试会被起点守卫永久拦住
                 EndPoints.tmp_msgs[chat_session_id]["status"] = "error"
-                EndPoints.chat["chat_body"].current.content.controls.append(cls.build_blk_err_msg(
+                EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_err_msg(
                     reason=EndPoints.runtime["app_util_lang"].translate(key="retry_failed"),
                     status="error",
                     errmsg=errmsg,
+                    on_retry=cls.callback_msg_retry,
                 ))
                 EndPoints.root["page"].update()
                 return
