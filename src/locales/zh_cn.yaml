@@ -11,8 +11,12 @@ new_session: "新话题"
 general_settings: "常规设置"
 default_models: "默认模型"
 model_provider: "模型服务"
-Internationalization: "国际化"
+internationalization: "国际化"
 language: "语言"
+font_family: "字体"
+font_family_global: "全局字体"
+font_family_text: "文本字体"
+font_family_code: "代码字体"
 
 # 默认模型
 default_chat_model: "对话模型"

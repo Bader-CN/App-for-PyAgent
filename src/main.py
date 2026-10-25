@@ -27,20 +27,21 @@ def main(page: ft.Page):
     Flet 主函数
     """
     logger.info(f"application starting...")
-
-    # 绑定 page 对象
+    # Page 对象
     EndPoints.root["page"] = page
-    # 绑定绑定键盘事件
-    page.on_keyboard_event = listen_keyboard
-    # Page 全局
-    page.padding = 0
-    page.spacing = 0
     # 初始化工具组件
     EndPoints.runtime["app_util_conf"] = ConfigUtils()
     EndPoints.runtime["app_util_cache"] = CacheUtils()
     EndPoints.runtime["app_util_profile"] = ProfileUtils()
     EndPoints.runtime["app_util_filedata"] = FileDataUtils()
     EndPoints.runtime["app_util_lang"] = LanguageUtils()
+    # Page 全局设置
+    app_theme = ft.Theme(font_family=EndPoints.runtime["app_util_profile"].font_family_global())
+    page.on_keyboard_event = listen_keyboard    # 绑定绑定键盘事件
+    page.padding = 0
+    page.spacing = 0
+    page.theme = app_theme
+    page.dark_theme = app_theme
     # 初始化相关视图组件
     main_view = MainView()
     navigation_view = NavigationView()

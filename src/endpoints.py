@@ -54,6 +54,9 @@ class EndPoints:
         "provider_models": ft.Ref[ft.ReorderableListView](),
         "provider_api_type": ft.Ref[ft.Container](),
         "provider_del_btn": ft.Ref[ft.IconButton](),
+        "font_family_global": ft.Ref[ft.Text](),
+        "font_family_text": ft.Ref[ft.Text](),
+        "font_family_code": ft.Ref[ft.Text](),
     }
 
     # 视图对象

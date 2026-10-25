@@ -367,6 +367,9 @@ class ProfileUtils:
             # 通用设置
             "general_settings": {
                 "language": "zh_cn",
+                "font_family_global": "Microsoft YaHei",
+                "font_family_text": "Microsoft YaHei",
+                "font_family_code": "Consolas",
             },
             # 默认模型
             "default_models": {
@@ -521,7 +524,7 @@ class ProfileUtils:
         获取思考强度字典
         格式为: {"reasoning_level": {"Chat": "Auto", "Agent": "Auto"}}
 
-        Return
+        Return:
         - Dict: 思考强度的完整字典
         """
         try:
@@ -539,6 +542,88 @@ class ProfileUtils:
         """
         try:
             self.app_user_dict["reasoning_level"] = reason_lv_dict
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def font_family_global(self):
+        """
+        获取 Global 的 font_family
+
+        Return:
+        - str: 字体家族字符串
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            font_family = general_settings.get("font_family_global", "Microsoft YaHei")
+            return font_family
+        except Exception as e:
+            logger.error(e)
+
+    def font_family_global_set(self, font_family: str):
+        """
+        更新 Global 的 font_family
+
+        Args:
+        - font_family: str 字体类型字符串
+        """
+        try:
+            self.app_user_dict["general_settings"]["font_family_global"] = font_family
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def font_family_text(self):
+        """
+        获取 Text 的 font_family
+
+        Return:
+        - str: 字体家族字符串
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            font_family = general_settings.get("font_family_text", "Microsoft YaHei")
+            return font_family
+        except Exception as e:
+            logger.error(e)
+    
+    def font_family_text_set(self, font_family: str):
+        """
+        更新 Text 的 font_family
+
+        Args:
+        - font_family: str 字体类型字符串
+        - font_size:   int 字体大小
+        """
+        try:
+            self.app_user_dict["general_settings"]["font_family_text"] = font_family
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def font_family_code(self):
+        """
+        获取 Code 的 font_family
+
+        Return:
+        - str: 字体家族字符串
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            font_family = general_settings.get("font_family_code", "Consolas")
+            return font_family
+        except Exception as e:
+            logger.error(e)
+    
+    def font_family_code_set(self, font_family: str):
+        """
+        更新 Code 的 font_family
+
+        Args:
+        - font_family: str 字体类型字符串
+        """
+        try:
+            self.app_user_dict["general_settings"]["font_family_code"] = font_family
             self.conf_save()
         except Exception as e:
             logger.error(e)

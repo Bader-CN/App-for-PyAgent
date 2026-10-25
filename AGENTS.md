@@ -157,8 +157,9 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 2. 切换时遍历导航栏 → 设置 Lv1 → 设置 Lv2，通过 `data["i18n_key"]` 匹配并更新 `.tooltip` / `.content` / `.value`
 3. 同步模式 Flet 自动 flush；异步需手动 `page.update()`
 
-- 覆盖范围目前是**硬编码遍历**：导航栏 `IconButton.tooltip`、设置 Lv1 的 `Button.content`、设置 Lv2 的 `Container > Row > Text.value`。
-- Lv3（模型服务详情）与其他组件（chat 头 / 输入面板）**不会自动刷新**；要么重新渲染，要么重启。
+- 遍历实现为 `SettingsGeneral.refresh_i18n(control)`：**递归**走 `content` / `controls` / `items` / `title` / `subtitle` / `leading` / `trailing`，命中带 `i18n_key` 的控件后按类型回写（`ft.Text.value` / `ft.Button.content`（仅文本时）/ `ft.IconButton.tooltip`）。因此 Lv2 的嵌套层级变化不影响刷新，新控件只要挂上 `i18n_key` 即可自动生效。
+- 遍历范围仍只到 Lv2 为止：Lv3（模型服务详情）与其他组件（chat 头 / 输入面板）**不会自动刷新**；要么重新渲染，要么重启。
+- 设置 Lv2 的“默认模型”板块目前未挂 `i18n_key`，切换语言不会刷新，需要补 `data={"i18n_key": ...}`。
 - 整个过程包在 `try/except` 中只打 `logger.warning`，新增控件漏挂 `i18n_key` 不会报错，只会保持旧语言。
 - 翻译 key 为**扁平 key-value**，文件在 `src/locales/{lang}.yaml`（`en`、`zh_cn`）；`LanguageUtils.translate` 缺失时返回 `??key??`。
 

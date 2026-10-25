@@ -200,7 +200,50 @@ class MessageUtilsCommon:
             # 其余行: 行尾补两个空格, 使其成为 Markdown 硬换行
             finish_lines.append(line + "  ")
         return "\n".join(finish_lines)
-    
+
+    @classmethod
+    def format_markdown_style_code(cls):
+        """
+        格式化 Markdown 代码块样式
+        """
+        font_family = EndPoints.runtime["app_util_profile"].font_family_code()
+        return ft.MarkdownStyleSheet(
+            code_text_style=ft.TextStyle(font_family=font_family, size=12),
+        )
+
+    @classmethod
+    def format_markdown_style_text(cls):
+        """
+        格式化 markdown 样式文本
+
+        Note:
+        - 不传的元素在 Dart 侧走 MarkdownStyleSheet.fromTheme 默认值 (基准 bodyMedium = 14px)
+        """
+        font_family = EndPoints.runtime["app_util_profile"].font_family_text()
+        font_family_code = EndPoints.runtime["app_util_profile"].font_family_code()
+
+        return ft.MarkdownStyleSheet(
+            a_text_style=ft.TextStyle(font_family=font_family, size=13),
+            p_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # 行内代码默认是 11.9px + 内置 monospace, 由 code_text_style 来控制
+            code_text_style=ft.TextStyle(font_family=font_family_code, size=12),
+            # 以下默认均为 bodyMedium(14), 不覆盖会比正文大 1px 且不受 text 字体控制
+            blockquote_text_style=ft.TextStyle(font_family=font_family, size=13),
+            checkbox_text_style=ft.TextStyle(font_family=font_family, size=13),
+            img_text_style=ft.TextStyle(font_family=font_family, size=13),
+            list_bullet_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # 表头默认带 w600 字重, 覆盖时需一并保留
+            table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
+            table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
+            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
+            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
+            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
+            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+        )
+
     @classmethod
     def session_id_current(cls):
         """
@@ -266,6 +309,12 @@ class MessageBlockCommon:
         user_msg_body = ft.Container(
             ft.Markdown(
                 value=text,
+                md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
+                code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+                code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+                soft_line_break=True,                               # 对齐 white-space: pre-line
+                selectable=True,
             ),
             padding=ft.Padding.symmetric(vertical=3, horizontal=5),
             border=ft.border.Border.all(width=1, color=ft.Colors.GREEN_200),
@@ -483,6 +532,11 @@ class MessageBlockCommon:
         ai_msg_blk = ft.Container(
             ft.Markdown(
                 value=text,
+                md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
+                code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+                code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+                soft_line_break=True,                               # 对齐 white-space: pre-line
                 selectable=True,
             ),
             data={"msg_type": "text", "lc_run_id": lc_run_id},
@@ -517,6 +571,11 @@ class MessageBlockCommon:
                 controls=[
                     ft.Markdown(
                         value=text,
+                        md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
+                        code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+                        code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+                        soft_line_break=True,                               # 对齐 white-space: pre-line
                         selectable=True,
                     ),
                     ft.Row(

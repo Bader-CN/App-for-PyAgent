@@ -52,8 +52,12 @@ class SettingsView:
         )
         # 子组件: 通用设置部分
         # 在这里创建主要是为了解决 Python 弱引用问题可能会导致对象被回收, 进而在调用时会出现 None 的问题
-        self.blk_i18n = SettingsGeneral.build_blk_i18n()                        # 国际化
-        self.blk_switch_language = SettingsGeneral.build_blk_language_switch()  # 语言
+        self.blk_i18n = SettingsGeneral.build_blk_i18n()                                        # 国际化
+        self.blk_switch_language = SettingsGeneral.build_blk_language_switch()                  # 语言
+        self.blk_font = SettingsGeneral.build_blk_font_family()                                 # 字体
+        self.blk_font_global = SettingsGeneral.build_blk_font_family_switch(font_type="global") # 全局字体
+        self.blk_font_text = SettingsGeneral.build_blk_font_family_switch(font_type="text")     # 全局字体
+        self.blk_font_code = SettingsGeneral.build_blk_font_family_switch(font_type="code")     # 全局字体
         # 子组件: 默认服务部分
         # 在这里创建主要是为了解决 Python 弱引用问题可能会导致对象被回收, 进而在调用时会出现 None 的问题
         self.blk_models = None # 模型列表
@@ -117,10 +121,37 @@ class SettingsView:
             self.lv2_view.expand = True
             self.lv2_view.content = ft.Column(
                 controls=[
-                    self.blk_i18n,
-                    ft.Divider(height=1),
-                    self.blk_switch_language,
-                    ft.Divider(height=1),
+                    # 国际化
+                    ft.Container(
+                        ft.Column(
+                            controls=[
+                                self.blk_i18n,
+                                ft.Divider(height=1),
+                                self.blk_switch_language,
+                            ],
+                        ),
+                        # bgcolor=ft.Colors.GREY_100,
+                        border=ft.Border.all(color=ft.Colors.GREY_400),
+                        border_radius=5,
+                        padding=ft.Padding.symmetric(vertical=5, horizontal=10),
+                    ),
+                    # 字体
+                    ft.Container(
+                        ft.Column(
+                            controls=[
+                                self.blk_font,
+                                ft.Divider(height=1),
+                                self.blk_font_global,
+                                ft.Divider(height=1),
+                                self.blk_font_text,
+                                ft.Divider(height=1),
+                                self.blk_font_code,
+                            ],
+                        ),
+                        border=ft.Border.all(color=ft.Colors.GREY_400),
+                        border_radius=5,
+                        padding=ft.Padding.symmetric(vertical=5, horizontal=10),
+                    ),
                 ],
             )
 

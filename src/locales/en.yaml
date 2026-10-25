@@ -11,8 +11,12 @@ new_session: "New Session"
 general_settings: "General Settings"
 default_models: "Default Models"
 model_provider: "Model Provider"
-Internationalization: "Internationalization"
+internationalization: "Internationalization"
 language: "Language"
+font_family: "Font Family"
+font_family_global: "Font Family Global"
+font_family_text: "Font Family Text"
+font_family_code: "Font Family Code"
 
 # Default Models
 default_chat_model: "Chat Model"
