@@ -245,6 +245,76 @@ class MessageUtilsCommon:
         )
 
     @classmethod
+    def format_markdown_style_tool_call(cls):
+        """
+        格式化 markdown 样式文本 (针对工具调用)
+
+        Note:
+        - 不传的元素在 Dart 侧走 MarkdownStyleSheet.fromTheme 默认值 (基准 bodyMedium = 14px)
+        - 本方法与 format_markdown_style_reasoning 目前逐字段相同, 但刻意保持两份独立
+          -> 工具结果 / 思考各自演进, 将来按实际效果单独调整, 不要为了去重而合并
+        """
+        font_family = EndPoints.runtime["app_util_profile"].font_family_text()
+        font_family_code = EndPoints.runtime["app_util_profile"].font_family_code()
+
+        return ft.MarkdownStyleSheet(
+            a_text_style=ft.TextStyle(font_family=font_family, size=13),
+            p_text_style=ft.TextStyle(font_family=font_family, size=13, color=ft.Colors.GREY_600),
+            # 行内代码默认是 11.9px + 内置 monospace, 由 code_text_style 来控制
+            code_text_style=ft.TextStyle(font_family=font_family_code, size=12),
+            # 以下默认均为 bodyMedium(14), 不覆盖会比正文大 1px 且不受 text 字体控制
+            blockquote_text_style=ft.TextStyle(font_family=font_family, size=13),
+            checkbox_text_style=ft.TextStyle(font_family=font_family, size=13),
+            img_text_style=ft.TextStyle(font_family=font_family, size=13),
+            list_bullet_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # 表头默认带 w600 字重, 覆盖时需一并保留
+            table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
+            table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
+            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
+            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
+            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
+            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+        )
+
+    @classmethod
+    def format_markdown_style_reasoning(cls):
+        """
+        格式化 markdown 样式文本 (针对思考)
+
+        Note:
+        - 不传的元素在 Dart 侧走 MarkdownStyleSheet.fromTheme 默认值 (基准 bodyMedium = 14px)
+        - 本方法与 format_markdown_style_tool_call 目前逐字段相同, 但刻意保持两份独立
+          -> 工具结果 / 思考各自演进, 将来按实际效果单独调整, 不要为了去重而合并
+        """
+        font_family = EndPoints.runtime["app_util_profile"].font_family_text()
+        font_family_code = EndPoints.runtime["app_util_profile"].font_family_code()
+
+        return ft.MarkdownStyleSheet(
+            a_text_style=ft.TextStyle(font_family=font_family, size=13),
+            p_text_style=ft.TextStyle(font_family=font_family, size=13, color=ft.Colors.GREY_600),
+            # 行内代码默认是 11.9px + 内置 monospace, 由 code_text_style 来控制
+            code_text_style=ft.TextStyle(font_family=font_family_code, size=12),
+            # 以下默认均为 bodyMedium(14), 不覆盖会比正文大 1px 且不受 text 字体控制
+            blockquote_text_style=ft.TextStyle(font_family=font_family, size=13),
+            checkbox_text_style=ft.TextStyle(font_family=font_family, size=13),
+            img_text_style=ft.TextStyle(font_family=font_family, size=13),
+            list_bullet_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # 表头默认带 w600 字重, 覆盖时需一并保留
+            table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
+            table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
+            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
+            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
+            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
+            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+        )
+
+    @classmethod
     def session_id_current(cls):
         """
         获取当前的 session_id
@@ -423,6 +493,9 @@ class MessageBlockCommon:
                 # 这样 on_size_change 时才能读到 "全文自然高"
                 ft.Text(
                     value=reasoning,
+                    font_family=EndPoints.runtime["app_util_profile"].font_family_text(),
+                    size=11,
+                    color=ft.Colors.GREY_600,
                     selectable=True,
                     size_change_interval=0,
                     on_size_change=_on_reasoning_text_size,
@@ -432,6 +505,7 @@ class MessageBlockCommon:
             auto_scroll=True,
             auto_scroll_animation=0,        # token 级流式, 瞬时跳底, 避免动画滞后
             height=reasoning_high,
+            margin=ft.Margin.symmetric(horizontal=5, vertical=3),
         )
         #############################################################################
 
@@ -447,22 +521,31 @@ class MessageBlockCommon:
                 ),
                 tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
                 subtitle=reasoning_subtitle if blk_status != "finish" else None,
+                # 展开时隐藏副标题 (正文区已有完整内容), 收缩时恢复
+                on_change=cls.callback_reasoning_subtitle_switch,
                 controls=[
                     ft.Markdown(
                         value=reasoning,
-                        selectable=True, # 允许用户选中复制
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                        code_theme=ft.MarkdownCodeTheme.GITHUB,
+                        md_style_sheet=MessageUtilsCommon.format_markdown_style_reasoning(),
+                        code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+                        code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+                        soft_line_break=True,                               # 对齐 white-space: pre-line
+                        selectable=True,
                     ),
                 ],
                 # 保持控件状态, 防止展开后重新渲染引发的闪烁
                 maintain_state=True,
                 expanded_alignment=ft.Alignment.BOTTOM_LEFT,
+                # 交叉轴必须 STRETCH: 默认 CENTER 会让 Column 收缩到最宽行宽度
+                # -> Markdown 内部每个段落是独立 widget, 于是每行各自居中 (行首参差不齐)
+                expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
                 # ExpansionTile 控件可以通过这种方式来自己绘制边框
                 # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
                 # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
                 shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
                 collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
+                controls_padding=ft.Padding.symmetric(horizontal=5, vertical=3),
             ),
             data={"msg_type": "reasoning", "lc_run_id": lc_run_id},
         )
@@ -486,13 +569,17 @@ class MessageBlockCommon:
                 title=ft.Row(
                     controls=[
                         ft.Icon(ft.Icons.BUILD_CIRCLE_ROUNDED, size=18),
-                        ft.Text(value=f"{args_dict.get("name")}"),
+                        ft.Text(
+                            value=f"{args_dict.get("name")}", 
+                            font_family=EndPoints.runtime["app_util_profile"].font_family_text()
+                        ),
                     ],
                     spacing=3,
                 ),
                 tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
                 subtitle=ft.Text(
                     value=f"{args_dict.get("args")}", 
+                    font_family=EndPoints.runtime["app_util_profile"].font_family_text(),
                     size=11,
                     color=ft.Colors.GREY_600,
                 ),
@@ -501,14 +588,45 @@ class MessageBlockCommon:
                 # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
                 shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
                 collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
+                # TOP_LEFT: 工具结果从顶部开始排 (高度自适应, 与 reasoning 的 BOTTOM_LEFT 不同)
+                expanded_alignment=ft.Alignment.TOP_LEFT,
+                # 交叉轴必须 STRETCH: 默认 CENTER 会让 Column 收缩到最宽行宽度
+                # -> Markdown 内部每个段落是独立 widget, 于是每行各自居中 (行首参差不齐)
+                expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls_padding=ft.Padding.symmetric(horizontal=5, vertical=3),
             ),
             data={"msg_type": "tool_call", "lc_run_id": lc_run_id, "tool_call_id": args_dict.get("id")},
         )
-        # 补充结果
+        # 补充结果 (历史补录路径)
+        # -> ExpansionTile.controls 声明为 Optional[list[Control]], 必须显式包成 list
         if args_dict.get("tool_result"):
-            tool_call_blk.content.controls = ft.Markdown(value=args_dict.get("tool_result"))
-            
+            tool_call_blk.content.controls = [cls.build_blk_ai_tool_call_result(content=args_dict.get("tool_result"))]
+
         return tool_call_blk
+
+    @classmethod
+    def build_blk_ai_tool_call_result(cls, content:str):
+        """
+        构建一个 Tool Call 的结果块 (展开区里的内容)
+
+        Note:
+        - 命名区分两侧: 工具名/参数在 ExpansionTile 的 title/subtitle, 本方法只负责结果
+        - 三处渲染路径必须共用本工厂, 否则样式会随「哪条路径渲染」而漂移:
+          1. 流式实时回填        -> chat_body.consume_tool_calls_output
+          2. 流式中途切走再切回  -> build_blk_ai_tool_call 的 tool_result 分支
+          3. 读库重渲染(已结束)  -> chat_list._session_msgs_group_render 第二遍
+        - 返回值是单个控件, 挂到 ExpansionTile.controls 时由调用方包成 list
+        """
+        tool_call_content_blk = ft.Markdown(
+            value=content,
+            md_style_sheet=MessageUtilsCommon.format_markdown_style_tool_call(),
+            code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+            code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+            soft_line_break=True,                               # 对齐 white-space: pre-line
+            selectable=True,
+        )
+        return tool_call_content_blk
 
     @classmethod
     def build_blk_ai_text(cls, text="", lc_run_id=None):
@@ -616,12 +734,19 @@ class MessageBlockCommon:
                 title="AI Summary",
                 tile_padding=ft.Padding.symmetric(vertical=0, horizontal=11),
                 # 添加一个 ft.Column 控件, 因为 ft.ExpansionTile 不支持调整控件的间距
-                controls=[ft.Column(margin=ft.Margin.symmetric(horizontal=5, vertical=5), spacing=5)],
+                controls=[
+                    ft.Column(
+                        margin=ft.Margin.symmetric(horizontal=5, vertical=5), 
+                        spacing=5,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    )
+                ],
                 # ExpansionTile 控件可以通过这种方式来自己绘制边框
                 # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape
                 # 收缩时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.collapsed_shape
                 shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5,),
                 collapsed_shape=ft.RoundedRectangleBorder(side=ft.BorderSide(width=1, color=ft.Colors.GREY_500), radius=5),
+                expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
             ),
             data={"msg_type": "ai_summary", "lc_run_id": None},
         )
@@ -723,6 +848,34 @@ class MessageBlockCommon:
             data={"msg_type": "err_msg", "lc_run_id": None},
         )
         return err_blk
+    
+    @classmethod
+    def callback_reasoning_subtitle_switch(cls, e):
+        """
+        思考块 展开/收缩 时同步副标题的可见性
+
+        Note:
+        1.展开时正文区 (controls 里的 ft.Markdown) 已经显示完整思考内容
+          -> 副标题再显示一遍既是重复, 又把 tile 撑到固定高度
+          -> 隐藏 (visible=False) 后 Dart 侧 buildTextOrWidget 返回 null, Flutter 的 subtitle 为 null, 完全不占布局
+        2.收缩时恢复显示
+          -> 副标题内容由 ChatBody.consume_reasoning 无条件累加, 恒为完整全文, 这里只切可见性, 不碰 value
+          -> 因此 MessageBlockCommon 无需读取 EndPoints.tmp_msgs 补算内容, 仍满足无状态准入
+        3.不要用 subtitle = None 来隐藏
+          -> subtitle 是闭包里持有 _on_reasoning_text_size (on_size_change) 的 ft.Column, 置 None 后无法恢复
+          -> 而 "finish" 状态的块本来就没有副标题 (subtitle is None), 此时直接返回
+        4.on_change 的 e.data 即点击后的 expanded 状态
+          -> Dart 侧 onExpansionChanged 先 updateProperties({"expanded": ...}), 再 triggerEvent("change", expanded)
+
+        Args:
+        - e: ft.ExpansionTile 的 on_change 事件
+        """
+        # "finish" 状态的思考块没有副标题, 展开仅是查看内容
+        if e.control.subtitle is None:
+            return
+        # 展开 -> 隐藏副标题 / 收缩 -> 显示副标题
+        e.control.subtitle.visible = not bool(e.data)
+        e.control.update()
 
 
 class InputCommon:

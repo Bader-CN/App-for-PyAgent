@@ -338,7 +338,8 @@ class ChatList:
                     and control.data.get("tool_call_id") == message.tool_call_id
                 ), None)
                 if blk is not None:
-                    blk.content.controls = [ft.Markdown(value=MessageUtilsCommon.format_tool_msg_markdown(tool_msg=message))]
+                    md_content = MessageUtilsCommon.format_tool_msg_markdown(tool_msg=message)
+                    blk.content.controls = [MessageBlockCommon.build_blk_ai_tool_call_result(content=md_content)]
                     break
             else:
                 logger.warning(f"ToolMessage has no matched tool_call block: {message.tool_call_id}")

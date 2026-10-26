@@ -75,7 +75,7 @@ flet run src/main.py         # 演示
 |---|---|---|
 | `AlertCommon` | 弹窗提示 | `alert_model_config_error` / `alert_model_config_none` |
 | `MessageUtilsCommon` | LangChain 消息对象 → 渲染数据（不造 ft 控件） | `format_ai_msg_content` / `format_tool_msg_markdown` / `format_user_msg_markdown` / `session_id_current` |
-| `MessageBlockCommon` | 纯消息块渲染（回调由调用方注入） | `build_blk_user_msg` / `build_blk_ai_reasoning` / `build_blk_ai_tool_call` / `build_blk_ai_text` / `build_blk_ai_text_finally` / `build_blk_ai_summary` / `build_blk_err_msg` |
+| `MessageBlockCommon` | 纯消息块渲染（回调由调用方注入） | `build_blk_user_msg` / `build_blk_ai_reasoning` / `build_blk_ai_tool_call` / `build_blk_ai_text` / `build_blk_ai_text_finally` / `build_blk_ai_summary` / `build_blk_err_msg` / `callback_reasoning_subtitle_switch` |
 | `InputCommon` | 输入面板 + 附件栏 | `build_blk_input_panel(tools)` / `build_blk_input_textfield` / `build_blk_input_attachments` / `build_blk_input_attachment` / `refresh_input_attachments` / `callback_attachment_del` |
 
 准入标准（**二者缺一不可**）：

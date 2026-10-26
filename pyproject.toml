@@ -3,7 +3,7 @@ name = "app-for-pyagent"
 version = "0.1.0"
 description = "Flet 桌面应用：通过 LangChain / DeepAgents 与 LLM 对话（纯 Python）"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 authors = [
     { name = "Bader-CN", email = "zhanghong.personal@outlook.com" }
 ]

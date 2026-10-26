@@ -436,7 +436,8 @@ class ChatBody:
                             msg["tool_result"] = tool_markdown
                             # 渲染界面 (面板尾部就是本轮的块)
                             if is_current and is_synced:
-                                EndPoints.chat["chat_body"].current.content.controls[-idx].content.controls = ft.Markdown(value=tool_markdown)
+                                # ExpansionTile.controls 声明为 Optional[list[Control]], 必须显式包成 list
+                                EndPoints.chat["chat_body"].current.content.controls[-idx].content.controls = [MessageBlockCommon.build_blk_ai_tool_call_result(content=tool_markdown)]
                                 EndPoints.root["page"].update()
                             break
         except Exception as e:
