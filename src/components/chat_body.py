@@ -306,9 +306,8 @@ class ChatBody:
                         on_retry=cls.callback_msg_retry,
                     )
                     EndPoints.chat["chat_body"].current.content.controls[-1] = blk_ai_finally
-                    
-                # 混动到底部 & 刷新界面
-                await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
+
+                # 刷新界面 (滚动到底部由 ft.Column 中的 auto_scroll 负责)
                 EndPoints.root["page"].update()
 
             # 将发送按钮的图标替换为 ft.Icons.SEND 状态
@@ -507,9 +506,8 @@ class ChatBody:
                         if is_current and is_synced:
                             EndPoints.chat["chat_body"].current.content.controls[-idx] = MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
                         break
-                # 渲染界面 (面板尾部就是本轮的块)
+                # 刷新界面 (滚动到底部由 ft.Column 中的 auto_scroll 负责)
                 if is_current and is_synced:
-                    await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
                     EndPoints.root["page"].update()
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
@@ -556,8 +554,7 @@ class ChatBody:
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.subtitle.controls[0].value += delta
                     # 针对内容
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.controls[0].value += delta
-                    # 更新界面
-                    await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
+                    # 刷新界面 (滚动到底部由 ft.Column 中的 auto_scroll 负责)
                     EndPoints.root["page"].update()
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
@@ -604,10 +601,9 @@ class ChatBody:
                         EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_text(lc_run_id=lc_run_id))
                 # 更新数据
                 EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1]["text"] += delta
-                # 渲染界面 (面板尾部就是本轮的块)
+                # 刷新界面 (滚动到底部由 ft.Column 中的 auto_scroll 负责)
                 if is_current and is_synced:
                     EndPoints.chat["chat_body"].current.content.controls[-1].content.value += delta
-                    await EndPoints.chat["chat_body"].current.content.scroll_to(offset=-1, duration=0)
                     EndPoints.root["page"].update()
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)

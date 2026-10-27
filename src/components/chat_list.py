@@ -93,6 +93,9 @@ class ChatList:
                 title=title,
             )
         )
+        # 直接渲染新建的会话
+        cls.callback_session_msgs_render(session_id=session_id, title=title)
+
         # 同步至持久化数据
         sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
         sessions.append({"session_id": session_id, "title": title})

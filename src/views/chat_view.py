@@ -99,13 +99,23 @@ class ChatView:
         self.chat_body.content = ft.Column(
             scroll=ft.ScrollMode.AUTO,
             ############################
+            # 自动跟随到底部 (原生实现, 不需手写 on_scroll 状态机)
+            # - 滚离底部 -> 暂停跟随
+            # - 滚回底部 -> 自动恢复
+            # - auto_scroll_animation=0: token 级流式, 瞬时跳底, 避免动画滞后
+            # 注意: 与 scroll_to 互斥
+            auto_scroll=True,
+            auto_scroll_animation=0,
+            ############################
+
+            ############################
             # 交叉轴 (即宽度) 铺满: 让每个消息块拿到 maxWidth 的紧约束, 从而横向填满 chat_body
             # -> 本 Column 主轴是竖直 => 那两行管的是高度; 且 scroll 让主轴无界
             # -> Flutter 会把带 flex 的子控件当普通子控件布局, expand 连高度都撑不起来
-            ############################
             # 注意: 本参数不能再用来右对齐
             # 消息块右对齐需改用 ft.Row(alignment=ft.MainAxisAlignment.END, controls=[blk]) 包裹
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            ############################
         )
         # 输入面板: 每次渲染重建
         # -> Flet 的 ref 在构造时绑定 (BaseControl.__post_init__: ref.current = self), 不会在挂载时重绑

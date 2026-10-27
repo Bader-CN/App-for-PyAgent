@@ -12,6 +12,8 @@ class SettingsDefaultModels:
     # 类变量
     popup_width = 300
     popup_height = 32
+    popup_color = ft.Colors.BLACK
+    font_size = 12
     min_width = 300
     max_width = 300
     @classmethod
@@ -36,6 +38,7 @@ class SettingsDefaultModels:
                                     ft.Text(
                                         value=EndPoints.runtime["app_util_profile"].default_model(default_type="chat_model"),
                                         ref=EndPoints.settings["default_chat_model"],
+                                        size=cls.font_size,
                                     ),
                                     ft.Container(expand=True),
                                     ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16),
@@ -51,6 +54,7 @@ class SettingsDefaultModels:
                             ft.PopupMenuItem(
                                 content=i, 
                                 height=cls.popup_height,
+                                label_text_style=ft.TextStyle(size=cls.font_size, color=cls.popup_color),
                                 on_click=cls.callback_default_model_set,
                                 data={"default_type": "chat_model", "default_model": i},
                             )
@@ -92,6 +96,7 @@ class SettingsDefaultModels:
                                     ft.Text(
                                         value=EndPoints.runtime["app_util_profile"].default_model(default_type="agent_model"),
                                         ref=EndPoints.settings["default_agent_model"],
+                                        size=cls.font_size,
                                     ),
                                     ft.Container(expand=True),
                                     ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16),
@@ -107,6 +112,7 @@ class SettingsDefaultModels:
                             ft.PopupMenuItem(
                                 content=i, 
                                 height=cls.popup_height,
+                                label_text_style=ft.TextStyle(size=cls.font_size, color=cls.popup_color),
                                 on_click=cls.callback_default_model_set,
                                 data={"default_type": "agent_model", "default_model": i},
                             )
@@ -148,6 +154,7 @@ class SettingsDefaultModels:
                                     ft.Text(
                                         value=EndPoints.runtime["app_util_profile"].default_model(default_type="summary_model"),
                                         ref=EndPoints.settings["default_summary_model"],
+                                        size=cls.font_size,
                                     ),
                                     ft.Container(expand=True),
                                     ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16),
@@ -163,6 +170,7 @@ class SettingsDefaultModels:
                             ft.PopupMenuItem(
                                 content=i, 
                                 height=cls.popup_height,
+                                label_text_style=ft.TextStyle(size=cls.font_size, color=cls.popup_color),
                                 on_click=cls.callback_default_model_set,
                                 data={"default_type": "summary_model", "default_model": i},
                             )
@@ -204,6 +212,7 @@ class SettingsDefaultModels:
                                     ft.Text(
                                         value=EndPoints.runtime["app_util_profile"].default_model(default_type="translation_model"),
                                         ref=EndPoints.settings["default_translation_model"],
+                                        size=cls.font_size,
                                     ),
                                     ft.Container(expand=True),
                                     ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16),
@@ -219,6 +228,7 @@ class SettingsDefaultModels:
                             ft.PopupMenuItem(
                                 content=i, 
                                 height=cls.popup_height,
+                                label_text_style=ft.TextStyle(size=cls.font_size, color=cls.popup_color),
                                 on_click=cls.callback_default_model_set,
                                 data={"default_type": "translation_model", "default_model": i},
                             )

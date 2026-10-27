@@ -8,6 +8,9 @@ class SettingsModelServices:
     """
     模型服务
     """
+    # 类变量
+    remove_provider_bgcolor = True     # 是否可以移除 provider 的背景色
+
     @classmethod
     def build_blk_provider_btn_add(cls):
         """
@@ -58,7 +61,7 @@ class SettingsModelServices:
         is_enable = cls.build_blk_provider_enable_label(enable=enable)
         # 构建组件列表项
         provider = ft.ListTile(
-            title=ft.Text(value=name, color=ft.Colors.BLACK),
+            title=ft.Text(value=name, color=ft.Colors.BLACK, size=13),
             leading=ft.ReorderableDragHandle(
                 content=ft.Icon(ft.Icons.DRAG_INDICATOR, color=ft.Colors.GREY_500),
                 mouse_cursor=ft.MouseCursor.GRAB,
@@ -134,7 +137,7 @@ class SettingsModelServices:
             title=ft.Row(
                 [
                     # data 用于编辑/删除时按 model_id 定位控件
-                    ft.Text(provider_model.get("model_name"), data={"model_id": provider_model.get("model_id")}),
+                    ft.Text(provider_model.get("model_name"), size=13, data={"model_id": provider_model.get("model_id")}),
                     ft.Container(expand=True),
                     *skills,        # 解包
                     ft.Container(), # 用于占位
@@ -255,9 +258,11 @@ class SettingsModelServices:
                             content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
                             margin=0,
                             border=ft.NoInputBorder(),
+                            on_blur=cls.callback_provider_name_edit,
+                            on_click=cls.callback_provider_name_click,
+                            data={"provider_name": provider_name},
                         ),
                         on_hover=cls.callback_provider_name_hover,  # 鼠标悬浮时触发(进入/离开都触发)
-                        data={"provider_name": provider_name},
                     ),
                     ft.Container(expand=True),
                     # API 类型
@@ -269,6 +274,7 @@ class SettingsModelServices:
                             ft.PopupMenuItem(
                                 content=protocol,
                                 on_click=cls.callback_provider_api_type_edit,
+                                label_text_style=ft.TextStyle(size=13, color=ft.Colors.BLACK),
                                 data={"provider_name": provider_name, "api_type": protocol},
                                 height=32,
                             )
@@ -276,7 +282,7 @@ class SettingsModelServices:
                         ],
                         menu_position=ft.PopupMenuPosition.UNDER,
                         content=ft.Container(
-                            content=ft.Text(value=provider_dict.get("api_type")),
+                            content=ft.Text(value=provider_dict.get("api_type"), size=13),
                             border=ft.Border.all(color=ft.Colors.GREY),
                             border_radius=10,
                             width=112,
@@ -316,6 +322,7 @@ class SettingsModelServices:
                     ),
                     ft.TextField(
                         value=EndPoints.runtime["app_util_conf"].provider_api_url(provider_name=provider_name),
+                        text_size=13,
                         hint_text="http://<api_base_url>:<port>/v1",
                         dense=True,
                         expand=True,
@@ -331,6 +338,7 @@ class SettingsModelServices:
                     ),
                     ft.TextField(
                         value=EndPoints.runtime["app_util_conf"].provider_api_key(provider_name=provider_name),
+                        text_size=13,
                         dense=True,
                         expand=True,
                         expand_loose=True,
@@ -444,37 +452,54 @@ class SettingsModelServices:
         EndPoints.settings["provider_api_type"].current.content = ft.Text(value=api_type)
 
     @classmethod
+    def callback_provider_name_edit(cls, e):
+        """
+        供应商名字(标题) - 修改
+        """
+        # 检查数据
+        old_name = e.control.data.get("provider_name")
+        new_name = e.control.value
+        if old_name != new_name:
+            # 遍历供应商列表, 更新名字
+            controls = EndPoints.settings["providers_list"].current.controls
+            for control in controls:
+                if control.title.value == old_name:
+                    # 同步内部数据
+                    control.title.value = new_name                      # 服务提供商拖拽对象的 value
+                    control.data["provider_name"] = new_name            # 服务提供商拖拽对象的 data
+                    e.control.data["provider_name"] = new_name          # 服务提供商详情标题的 data
+                    EndPoints.settings["provider_del_btn"].current.data["provider_name"] = new_name  # 服务提供商的删除按钮
+                    EndPoints.runtime["last_provider_name"] = new_name  # 设置界面最后点击的提供商详情
+                    # 保存数据
+                    providers = EndPoints.runtime["app_util_conf"].providers_dict()
+                    providers[new_name] = providers.pop(old_name)
+                    EndPoints.runtime["app_util_conf"].conf_save()
+                    break
+        # 去掉父控件颜色 & 允许去掉背景色
+        e.control.parent.bgcolor = None
+        cls.remove_provider_bgcolor = True
+
+    @classmethod
+    def callback_provider_name_click(cls, e):
+        """
+        供应商名字(标题) - 点击时需要编辑内容, 因此背景色不能被删除
+        """
+        cls.remove_provider_bgcolor = False
+
+    @classmethod
     def callback_provider_name_hover(cls, e):
         """
-        供应商名字(标题) - 悬浮时显示边框
+        供应商名字(标题) - 悬浮时显示背景色
         """
         # 鼠标进入
         if e.data:
-            e.control.border = ft.Border.all(width=1, color=ft.Colors.GREY_400)
             e.control.border_radius = 5
+            e.control.bgcolor = ft.Colors.GREY_200
         # 鼠标离开
         else:
-            e.control.border = None
             e.control.border_radius = None
-            # 检查数据
-            old_name = e.control.data.get("provider_name")
-            new_name = e.control.content.value
-            if old_name != new_name:
-                # 遍历供应商列表, 更新名字
-                controls = EndPoints.settings["providers_list"].current.controls
-                for control in controls:
-                    if control.title.value == old_name:
-                        # 同步内部数据
-                        control.title.value = new_name                      # 服务提供商拖拽对象的 value
-                        control.data["provider_name"] = new_name            # 服务提供商拖拽对象的 data
-                        e.control.data["provider_name"] = new_name          # 服务提供商详情标题的 data
-                        EndPoints.settings["provider_del_btn"].current.data["provider_name"] = new_name  # 服务提供商的删除按钮
-                        EndPoints.runtime["last_provider_name"] = new_name  # 设置界面最后点击的提供商详情
-                        # 保存数据
-                        providers = EndPoints.runtime["app_util_conf"].providers_dict()
-                        providers[new_name] = providers.pop(old_name)
-                        EndPoints.runtime["app_util_conf"].conf_save()
-                        break
+            if cls.remove_provider_bgcolor:
+                e.control.bgcolor = None
 
     @classmethod
     def callback_provider_switch_btn_toggle(cls, e):
