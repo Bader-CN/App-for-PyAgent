@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     # GUI 框架
-    "flet>=1.0.4",
+    "flet>=1.0.5",
     # 智能体核心层: LangChain / LangGraph / DeepAgents
     "langchain>=1.4.4",
     "langchain-openai>=1.7.0",
@@ -27,12 +27,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "flet-cli>=1.0.4",
-    "flet-desktop>=1.0.4",
-    "flet-web>=1.0.4",
+    "flet-cli>=1.0.5",
+    "flet-desktop>=1.0.5",
+    "flet-web>=1.0.5",
     # Integration testing with `flet test` / pytest. The `test` extra brings in
     # pytest, pytest-asyncio and the screenshot-comparison dependencies.
-    "flet[test]>=1.0.4",
+    "flet[test]>=1.0.5",
 ]
 
 [tool.pytest.ini_options]

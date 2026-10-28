@@ -616,50 +616,53 @@ class ChatBody:
         Args:
         - chat_session_id:  对应会话ID
         """
-        # 基于 "会话ID" 获取所有的历史消息
-        config = {"configurable": {"thread_id": chat_session_id}}
-        if EndPoints.runtime["lc_agents"].state_graph_chat is None:
-            EndPoints.runtime["lc_agents"].state_graph_chat_update()
-        snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
-        messages = snapshot.values.get("messages", [])
+        try:
+            # 基于 "会话ID" 获取所有的历史消息
+            config = {"configurable": {"thread_id": chat_session_id}}
+            if EndPoints.runtime["lc_agents"].state_graph_chat is None:
+                EndPoints.runtime["lc_agents"].state_graph_chat_update()
+            snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
+            messages = snapshot.values.get("messages", [])
 
-        # 获取指定类型的 messages
-        last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
-        last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
-        if last_user_msg and last_ai_msg:
-            # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
-            summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
-            # 组装消息
-            summary_msgs = [
-                SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
-                HumanMessage(summary_text),
-            ]
+            # 获取指定类型的 messages
+            last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+            last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
+            if last_user_msg and last_ai_msg:
+                # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
+                summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
+                # 组装消息
+                summary_msgs = [
+                    SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
+                    HumanMessage(summary_text),
+                ]
 
-        # 调用模型并总结标题
-        if EndPoints.runtime["lc_agents"].agent_summary is None:
-            EndPoints.runtime["lc_agents"].agent_summary_update()
+            # 调用模型并总结标题
+            if EndPoints.runtime["lc_agents"].agent_summary is None:
+                EndPoints.runtime["lc_agents"].agent_summary_update()
 
-        # 确保话题总结模型不为 None
-        if EndPoints.runtime["lc_agents"].agent_summary is not None:
-            response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
-            summary_title = str(response.text)
-            # 渲染界面
-            sessions = EndPoints.chat["chat_list"].current.controls
-            for session in sessions:
-                if session.data.get("session_id") == chat_session_id:
-                    session.title = ft.Text(summary_title)
-                    session.data["title"] = summary_title
-                    if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                        EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
-                    break
-            EndPoints.root["page"].update()
-            # 保持数据 (sessions 数据类型为 list)
-            sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
-            for idx, session_dict in enumerate(sessions):
-                if session_dict.get("session_id") == chat_session_id:
-                    sessions[idx]["title"] = summary_title
-                    EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
-                    break
+            # 确保话题总结模型不为 None
+            if EndPoints.runtime["lc_agents"].agent_summary is not None:
+                response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
+                summary_title = str(response.text)
+                # 渲染界面
+                sessions = EndPoints.chat["chat_list"].current.controls
+                for session in sessions:
+                    if session.data.get("session_id") == chat_session_id:
+                        session.title = ft.Text(summary_title)
+                        session.data["title"] = summary_title
+                        if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
+                            EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
+                        break
+                EndPoints.root["page"].update()
+                # 保持数据 (sessions 数据类型为 list)
+                sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
+                for idx, session_dict in enumerate(sessions):
+                    if session_dict.get("session_id") == chat_session_id:
+                        sessions[idx]["title"] = summary_title
+                        EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
+                        break
+        except Exception as e:
+            logger.warning(e)
 
     @classmethod
     async def callback_msg_retry(cls, e):

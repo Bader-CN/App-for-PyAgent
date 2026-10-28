@@ -437,6 +437,7 @@ class MessageBlockCommon:
                 ],
                 alignment=ft.MainAxisAlignment.END,
                 spacing=5,
+                margin=ft.Margin.only(right=10),
             )
         )
 
@@ -515,7 +516,10 @@ class MessageBlockCommon:
                 title=ft.Row(
                     controls=[
                         ft.Icon(ft.Icons.LIGHTBULB_CIRCLE_ROUNDED, size=18),
-                        ft.Text(value=EndPoints.runtime["app_util_lang"].translate(key="reasoning") if blk_status != "finish" else EndPoints.runtime["app_util_lang"].translate(key="reason_finish")),
+                        ft.Text(
+                            value=EndPoints.runtime["app_util_lang"].translate(key="reasoning") if blk_status != "finish" else EndPoints.runtime["app_util_lang"].translate(key="reason_finish"),
+                            size=13,
+                        ),
                     ],
                     spacing=3,
                 ),
@@ -571,7 +575,7 @@ class MessageBlockCommon:
                         ft.Icon(ft.Icons.BUILD_CIRCLE_ROUNDED, size=18),
                         ft.Text(
                             value=f"{args_dict.get("name")}", 
-                            font_family=EndPoints.runtime["app_util_profile"].font_family_text()
+                            size=13,
                         ),
                     ],
                     spacing=3,
@@ -714,6 +718,7 @@ class MessageBlockCommon:
                         ],
                         alignment=ft.MainAxisAlignment.END,
                         spacing=5,
+                        margin=ft.Margin.only(right=10),
                     )
                 ],
                 spacing=5,

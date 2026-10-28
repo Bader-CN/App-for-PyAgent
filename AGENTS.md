@@ -216,6 +216,7 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 
 - **会话 ID 互斥**：`session_id_chat_current` 与 `session_id_agent_current` 至多一个非 None；停在 docs/settings 时都为 None。ID 格式为 `<user>_chat_<uuid>` / `<user>_agent_<uuid>`，附件按 `startswith(session_prefix)` 天然隔离。
 - **重试 / 中止保存留在 `ChatBody`**：它们读写 `tmp_msgs` 状态机并跨组件改面板，不满足 common 准入；agent 侧将来各写一套，但 `as_node` 显式、`tool_calls=[]` 等机制注释只保留一份。
+- **刻意复制的注释/代码不合并去重**：灰底机制注释共 4 份拷贝（`chat_header` ×2 / `settings_model_services` ×2，grep `灰底机制 ⚑` 可全数列出）；`format_markdown_style_tool_call` / `format_markdown_style_reasoning` 两份样式表同理。目的都是任意阅读入口就地自解释（Flutter 侧实测型知识，隔层引用容易被绕过）；修改时 grep 标记 / 对照孪生方法**全文同步**。此条优先于上一条——后者适用于能被单处注释覆盖的代码级机制。
 
 ## 视图层级
 
@@ -391,7 +392,7 @@ ft.PopupMenuButton(
 
 ### `ListTile` 局部更新
 
-Flet 0.85 下直接替换整个 `ListTile` 有时不刷新；只改某个字段（如 `trailing`）后调用 `control.update()` 更稳（见 `callback_provider_switch_btn_toggle`）。
+Flet 1.0.x 下直接替换整个 `ListTile` 有时不刷新；只改某个字段（如 `trailing`）后调用 `control.update()` 更稳（见 `callback_provider_switch_btn_toggle`）。
 
 ## LangChain 注意事项
 
@@ -427,7 +428,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 
 ## 依赖
 
-Python >= 3.10。依赖与打包配置统一在 `pyproject.toml`（`[project].dependencies` 运行依赖 / `[dependency-groups].dev` 开发依赖 / `[tool.flet]`），安装步骤见 [README.md](./README.md)。
+Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖与打包配置统一在 `pyproject.toml`（`[project].dependencies` 运行依赖 / `[dependency-groups].dev` 开发依赖 / `[tool.flet]`），安装步骤见 [README.md](./README.md)。
 
 运行依赖：`flet` / `langchain` / `langchain-openai` / `langchain-ollama` / `langgraph` / `langgraph-checkpoint-sqlite` / `deepagents` / `PyYAML` / `loguru` / `pillow` / `requests` / `aiosqlite`。
 

@@ -8,8 +8,6 @@ class SettingsModelServices:
     """
     模型服务
     """
-    # 类变量
-    remove_provider_bgcolor = True     # 是否可以移除 provider 的背景色
 
     @classmethod
     def build_blk_provider_btn_add(cls):
@@ -236,12 +234,14 @@ class SettingsModelServices:
         - e 和 provider_name 二选一, 两者互斥, 有且仅有一个是 None
         - 点击 ListTile 触发时传 e (provider_name 从 e.control.data 提取)
         - 其余调用时直接传 provider_name (e 不传)
+        - 无论从哪条路径进来, 都以本次渲染的名字为准同步 last_provider_name,
+          避免各处手动维护导致漂移 (改名后重建需要依赖这一点)
         """
         # 模型服务提供商的名字
         if e is not None:
             provider_name = e.control.data.get("provider_name")
-            # 将 "模型服务提供商" 更新至全局变量中
-            EndPoints.runtime["last_provider_name"] = provider_name
+        # 将 "模型服务提供商" 更新至全局变量中
+        EndPoints.runtime["last_provider_name"] = provider_name
         # 基于 "模型服务提供商" 来获取当前的 provider_dict
         provider_dict = EndPoints.runtime["app_util_conf"].provider_dict(provider_name)
         # 标题组件
@@ -255,14 +255,45 @@ class SettingsModelServices:
                             text_style=ft.TextStyle(weight=ft.FontWeight.BOLD),
                             multiline=False,
                             dense=True,
-                            content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
+                            ############################################################
+                            # filled: 输入框「装饰容器」的底色总开关
+                            # - 定义不在 TextField 上, 而在基类 FormFieldControl 里 (flet/controls/material/form_field_control.py)
+                            #   所以翻 TextField 文档找不到
+                            # - 值为 False 时, bgcolor / focused_bgcolor / hover_color / fill_color 全部不生效
+                            #   这几个字段的 docstring 统一写着 "Will not be visible if filled is False"
+                            # - 下面这套灰底正是靠 hover_color / focused_bgcolor 画出来的, 因此必须打开
+                            # - 注意: Flet 1.x 的 TextField.before_update 会在 filled is None
+                            #   且上述某个颜色非 None 时自动置 True, 所以本行在当前版本下是冗余的
+                            #   显式写出是为了让「必须有底色容器」这个意图在代码里自解释, 不依赖隐式行为
+                            filled=True,
+                            ############################################################
+                            # 灰色底的实现逻辑:
+                            # - hover_color:        未获得焦点 & 悬浮时
+                            # - focused_bgcolor:    获得焦点时
+                            # - bgcolor:            默认为透明, 颜色改变由 on_focus / on_blur 来切换
+                            # - 灰色底的实现理由:
+                            #   - Flet 的 Flutter 端按 fillColor = fill_color ?? (focused ? focused_bgcolor : bgcolor) 选色
+                            #     其中 focused 是 Flutter 端维护的布尔值
+                            #     实测鼠标移出后它未必保持 true -> 灰底会消失
+                            #   - 因此 on_focus 里把 bgcolor 一起抬高, 两条机制互为兜底 (focused_bgcolor/bgcolor)
+                            #   - 不用 on_hover / on_click 事件拼状态
+                            #     实测点击落在输入框自身范围内不会失焦
+                            #
+                            # Dart 三元表达式 (Flutter 端的语言)
+                            # fillColor = fill_color ?? (focused ? focused_bgcolor : bgcolor)
+                            # - ??: 左边是 null 就取右边, 否则取左边
+                            # - ?:  三元表达式: "条件 ? 真值 : 假值"
+                            bgcolor=ft.Colors.TRANSPARENT,
+                            hover_color=ft.Colors.GREY_200,
+                            focused_bgcolor=ft.Colors.GREY_200,
+                            on_focus=cls.callback_provider_name_focus,
+                            on_blur=cls.callback_provider_name_edit,
+                            ############################################################
+                            content_padding=ft.Padding(left=2, top=5, right=2, bottom=5),
                             margin=0,
                             border=ft.NoInputBorder(),
-                            on_blur=cls.callback_provider_name_edit,
-                            on_click=cls.callback_provider_name_click,
                             data={"provider_name": provider_name},
                         ),
-                        on_hover=cls.callback_provider_name_hover,  # 鼠标悬浮时触发(进入/离开都触发)
                     ),
                     ft.Container(expand=True),
                     # API 类型
@@ -449,57 +480,81 @@ class SettingsModelServices:
         provider_data["api_type"] = api_type
         EndPoints.runtime["app_util_conf"].conf_save()
         # 刷新界面
-        EndPoints.settings["provider_api_type"].current.content = ft.Text(value=api_type)
+        blk_api_type = EndPoints.settings["provider_api_type"].current
+        blk_api_type.content = ft.Text(value=api_type)
+        # 只改 Python 侧属性不会自动同步到 Flutter (该容器不是本次事件的 e.control)
+        blk_api_type.update()
+
+    @classmethod
+    def callback_provider_name_focus(cls, e):
+        """
+        供应商名字(标题) - 获得焦点
+
+        Note:
+        - 灰色底的实现逻辑:
+            - hover_color:        未获得焦点 & 悬浮时
+            - focused_bgcolor:    获得焦点时
+            - bgcolor:            默认为透明, 颜色改变由 on_focus / on_blur 来切换
+        - 灰色底的实现理由:
+            - Flet 的 Flutter 端按 fillColor = fill_color ?? (focused ? focused_bgcolor : bgcolor) 选色
+            其中 focused 是 Flutter 端维护的布尔值
+            实测鼠标移出后它未必保持 true -> 灰底会消失
+            - 因此 on_focus 里把 bgcolor 一起抬高, 两条机制互为兜底 (focused_bgcolor/bgcolor)
+            - 不用 on_hover / on_click 事件拼状态
+            实测点击落在输入框自身范围内不会失焦
+
+        Dart 三元表达式 (Flutter 端的语言)
+        fillColor = fill_color ?? (focused ? focused_bgcolor : bgcolor)
+        - ??: 左边是 null 就取右边, 否则取左边
+        - ?:  三元表达式: "条件 ? 真值 : 假值"
+        """
+        # 为了兜底, 这里把 bgcolor 一起抬高, 两条机制互为兜底 (focused_bgcolor/bgcolor)
+        e.control.bgcolor = ft.Colors.GREY_200
+        e.control.update()
 
     @classmethod
     def callback_provider_name_edit(cls, e):
         """
         供应商名字(标题) - 修改
+
+        Note:
+        - 由 on_blur 触发 (失焦即保存)
+        - 失焦时把 bgcolor 恢复透明; 若此时鼠标仍悬浮, 由 hover_color 提供灰底
+        - 名字确实变化时重建整个详情区
+          -> 标题 / API URL / API Key / API 类型菜单项的 data["provider_name"] 都只在这一处绑定, 重建即可全部换成新名字
+        - 重建后 e.control 已脱离控件树, 再 update() 会抛 RuntimeError, 因此提前 return
         """
         # 检查数据
         old_name = e.control.data.get("provider_name")
         new_name = e.control.value
-        if old_name != new_name:
-            # 遍历供应商列表, 更新名字
-            controls = EndPoints.settings["providers_list"].current.controls
-            for control in controls:
-                if control.title.value == old_name:
-                    # 同步内部数据
-                    control.title.value = new_name                      # 服务提供商拖拽对象的 value
-                    control.data["provider_name"] = new_name            # 服务提供商拖拽对象的 data
-                    e.control.data["provider_name"] = new_name          # 服务提供商详情标题的 data
-                    EndPoints.settings["provider_del_btn"].current.data["provider_name"] = new_name  # 服务提供商的删除按钮
-                    EndPoints.runtime["last_provider_name"] = new_name  # 设置界面最后点击的提供商详情
-                    # 保存数据
-                    providers = EndPoints.runtime["app_util_conf"].providers_dict()
-                    providers[new_name] = providers.pop(old_name)
-                    EndPoints.runtime["app_util_conf"].conf_save()
-                    break
-        # 去掉父控件颜色 & 允许去掉背景色
-        e.control.parent.bgcolor = None
-        cls.remove_provider_bgcolor = True
-
-    @classmethod
-    def callback_provider_name_click(cls, e):
-        """
-        供应商名字(标题) - 点击时需要编辑内容, 因此背景色不能被删除
-        """
-        cls.remove_provider_bgcolor = False
-
-    @classmethod
-    def callback_provider_name_hover(cls, e):
-        """
-        供应商名字(标题) - 悬浮时显示背景色
-        """
-        # 鼠标进入
-        if e.data:
-            e.control.border_radius = 5
-            e.control.bgcolor = ft.Colors.GREY_200
-        # 鼠标离开
-        else:
-            e.control.border_radius = None
-            if cls.remove_provider_bgcolor:
-                e.control.bgcolor = None
+        
+        # 名字未变: 只恢复底色
+        if old_name == new_name:
+            e.control.bgcolor = ft.Colors.TRANSPARENT
+            e.control.update()
+            return
+        
+        # 先把自身 data 改名, 防止重建过程中再次派发 blur 时重复处理
+        e.control.data["provider_name"] = new_name
+        # 遍历供应商列表, 更新名字
+        controls = EndPoints.settings["providers_list"].current.controls
+        for control in controls:
+            if control.title.value == old_name:
+                # 同步拖拽对象的 value / data
+                control.title.value = new_name
+                control.data["provider_name"] = new_name
+                # 只改 Python 侧属性不会自动同步到 Flutter, 不 update 的话要等下一次整体 flush(如窗口失焦) 才显示新名字
+                control.update()
+                break
+        # 保存数据
+        # providers 是 conf 字典内部的引用, 必须原地 pop + 赋值才能写回正确顺序
+        providers = EndPoints.runtime["app_util_conf"].providers_dict()
+        providers[new_name] = providers.pop(old_name)
+        EndPoints.runtime["app_util_conf"].conf_save()
+        # 重建详情区 (内部会同步 last_provider_name)
+        cls.callback_provider_details_render(provider_name=new_name)
+        # 详情区是兄弟节点, 不是本次事件的 e.control, 需显式刷新
+        EndPoints.settings["lv3_view"].current.update()
 
     @classmethod
     def callback_provider_switch_btn_toggle(cls, e):
@@ -516,7 +571,7 @@ class SettingsModelServices:
         for control in controls:
             if control.data.get("provider_name") == provider_name:
                 # 直接更新 trailing 属性, 不替换整个 ListTile
-                # 目前在 Flet 0.85 版本下, 直接替换无法正常刷新
+                # 在 Flet 1.0.x 下, 直接替换无法正常刷新
                 control.trailing = cls.build_blk_provider_enable_label(enable=provider_data["enable"])
                 control.update()
                 break
