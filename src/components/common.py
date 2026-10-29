@@ -351,7 +351,7 @@ class MessageBlockCommon:
     - 需要回调的块由调用方注入 (本模块不得 import 任何组件, 也不得读写 EndPoints.chat)
     """
     @classmethod
-    def build_blk_user_msg(cls, user_msg: list[dict], user_msg_id=None, on_retry=None):
+    def build_blk_user_msg(cls, user_msg: list[dict], user_msg_id=None, on_copy=None, on_retry=None, on_delete=None):
         """
         构建一个 User 消息块, 格式参考了如下文档
         https://docs.langchain.com/oss/python/langchain/messages#multimodal
@@ -359,11 +359,20 @@ class MessageBlockCommon:
         Args:
         - user_msg:     多模态的用户消息内容, 参考了 HumanMessage 的格式: [{"type": "text", "text": ***}]
         - user_msg_id:  用户消息的唯一标识符, 如果 user_msg 的数据类型为 HumanMessage, 则忽略传入的值, 否则不传则会自动生成
-        - on_retry:     重试按钮的回调; 不传则不绑定 (公共层不反向依赖任何组件, 故由调用方注入)
+
+        工具部分的按钮回调函数 - 不传则不绑定 (公共层不反向依赖任何组件, 故由调用方注入)
+        - on_copy:      复制按钮的回调
+        - on_retry:     重试按钮的回调
+        - on_delete:    删除按钮的回调
 
         Return:
         - Flet Container 控件对象
         """
+        # 提前创建最外层组件, 用于变量引用
+        user_msg_blk = ft.Container(
+            content=ft.Column(spacing=5),
+        )
+
         # 整理消息
         text = ""
         images = []
@@ -377,7 +386,7 @@ class MessageBlockCommon:
 
         # 用户消息体控件
         user_msg_body = ft.Container(
-            ft.Markdown(
+            mser_msg_md:=ft.Markdown(
                 value=text,
                 md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
                 code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
@@ -418,7 +427,13 @@ class MessageBlockCommon:
                 controls=[
                     # 复制按钮
                     ft.Container(
-                        content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
+                        content=ft.IconButton(
+                            icon=ft.Icons.COPY, 
+                            icon_size=14, 
+                            padding=0,
+                            on_click=on_copy,
+                            data={"ft_markdown": mser_msg_md},
+                        ),
                         width=18,
                         height=18,
                     ),
@@ -434,6 +449,18 @@ class MessageBlockCommon:
                         width=18,
                         height=18,
                     ),
+                    # 删除按钮
+                    ft.Container(
+                        content=ft.IconButton(
+                            icon=ft.Icons.DELETE_OUTLINE,
+                            icon_size=14,
+                            padding=0,
+                            on_click=on_delete,
+                            data={"blk_type": "user_msg", "blk_obj": user_msg_blk},
+                        ),
+                        width=18,
+                        height=18,
+                    ),
                 ],
                 alignment=ft.MainAxisAlignment.END,
                 spacing=5,
@@ -441,16 +468,10 @@ class MessageBlockCommon:
             )
         )
 
-        user_msg_blk = ft.Container(
-            ft.Column(
-                # 上述组件的集合体
-                controls=column_controls,
-                spacing=5,
-            ),
-            data={"msg_type": "user_msg", "user_msg": user_msg, "user_msg_id": user_msg_id, "lc_run_id": None},
-            # border=ft.border.Border.all(width=1, color=ft.Colors.GREY_500),
-            # border_radius=5,
-        )
+        # 组装所有组件
+        user_msg_blk.content.controls = column_controls
+        user_msg_blk.data = {"msg_type": "user_msg", "user_msg": user_msg, "user_msg_id": user_msg_id, "lc_run_id": None}
+
         # 调整日志显示内容
         show_user_msg = copy.deepcopy(user_msg)
         idx = 1
@@ -669,14 +690,18 @@ class MessageBlockCommon:
         return ai_msg_blk
 
     @classmethod
-    def build_blk_ai_text_finally(cls, text="", lc_run_id=None, on_retry=None):
+    def build_blk_ai_text_finally(cls, text="", lc_run_id=None, on_copy=None, on_retry=None, on_delete=None):
         """
         构建一个 AI 消息块 (仅针对最后的输出内容)
 
         Args:
         - text:         AI 消息内容
         - lc_run_id:    LangChain AIMessage 里面的 Internal tracing/callback ID
-        - on_retry:     重试按钮的回调; 不传则不绑定 (公共层不反向依赖任何组件, 故由调用方注入)
+        
+        工具部分的按钮回调函数 - 不传则不绑定 (公共层不反向依赖任何组件, 故由调用方注入)
+        - on_copy:      复制按钮的回调
+        - on_retry:     重试按钮的回调
+        - on_delete:    删除按钮的回调
 
         Note:
         不设 expand/expand_loose: 它们只作用于「直接父控件的主轴」
@@ -688,43 +713,69 @@ class MessageBlockCommon:
         Return:
         - Flet Container 控件对象
         """
+        # 删除按钮的 data 必须持有块自身, 所以需要先建立外壳, 再填 content (两段式, 与 build_blk_user_msg 保持一致)
         ai_msg_blk = ft.Container(
-            ft.Column(
-                controls=[
-                    ft.Markdown(
-                        value=text,
-                        md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
-                        code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-                        code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
-                        soft_line_break=True,                               # 对齐 white-space: pre-line
-                        selectable=True,
-                    ),
-                    ft.Row(
-                        controls=[
-                            # 复制按钮
-                            ft.Container(
-                                content=ft.IconButton(icon=ft.Icons.COPY, icon_size=14, padding=0),
-                                width=18,
-                                height=18,
-                            ),
-                            # 重试按钮
-                            ft.Container(
-                                # ft.Icons.REFRESH / ft.Icons.LOOP
-                                content=ft.IconButton(icon=ft.Icons.AUTORENEW, icon_size=14, padding=0, on_click=on_retry),
-                                width=18,
-                                height=18,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.END,
-                        spacing=5,
-                        margin=ft.Margin.only(right=10),
-                    )
-                ],
-                spacing=5,
-            ),
             data={"msg_type": "text", "lc_run_id": lc_run_id},
             padding=ft.Padding.symmetric(vertical=3, horizontal=0),
+        )
+
+        # 此时 ai_msg_blk 已绑定, 删除按钮的 data 才能安全地引用它
+        ai_msg_blk.content = ft.Column(
+            controls=[
+                ai_msg_md:=ft.Markdown(
+                    value=text,
+                    md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
+                    code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
+                    code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
+                    soft_line_break=True,                               # 对齐 white-space: pre-line
+                    selectable=True,
+                ),
+                ft.Row(
+                    controls=[
+                        # 复制按钮
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.COPY, 
+                                icon_size=14, 
+                                padding=0,
+                                on_click=on_copy,
+                                data={"ft_markdown": ai_msg_md},
+                            ),
+                            width=18,
+                            height=18,
+                        ),
+                        # 重试按钮
+                        ft.Container(
+                            # ft.Icons.REFRESH / ft.Icons.LOOP
+                            content=ft.IconButton(
+                                icon=ft.Icons.AUTORENEW, 
+                                icon_size=14, 
+                                padding=0, 
+                                on_click=on_retry
+                            ),
+                            width=18,
+                            height=18,
+                        ),
+                        # 删除按钮
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                icon_size=14,
+                                padding=0,
+                                on_click=on_delete,
+                                data={"blk_type": "ai_msg", "blk_obj": ai_msg_blk},
+                            ),
+                            width=18,
+                            height=18,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.END,
+                    spacing=5,
+                    margin=ft.Margin.only(right=10),
+                )
+            ],
+            spacing=5,
         )
         return ai_msg_blk
 

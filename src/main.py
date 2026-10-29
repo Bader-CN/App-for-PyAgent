@@ -106,6 +106,7 @@ def listen_keyboard(e: ft.KeyboardEvent):
 async def listen_clipboard(session_id: str):
     """
     监听剪贴板图片的处理函数
+    https://flet.dev/docs/services/clipboard
     
     Note:
     目前只支持图片

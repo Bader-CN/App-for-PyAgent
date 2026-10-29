@@ -210,7 +210,12 @@ class ChatInput:
             # user_msg 不能是非空
             if user_msg:
                 # 渲染 user_msg
-                user_msg_blk = MessageBlockCommon.build_blk_user_msg(user_msg=user_msg, on_retry=ChatBody.callback_msg_retry)
+                user_msg_blk = MessageBlockCommon.build_blk_user_msg(
+                    user_msg=user_msg, 
+                    on_copy=ChatBody.callback_msg_copy,
+                    on_retry=ChatBody.callback_msg_retry,
+                    on_delete=ChatBody.callback_msg_delete,
+                )
                 EndPoints.chat["chat_body"].current.content.controls.append(user_msg_blk)
                 # 清空内容和附件
                 EndPoints.input["input_textfield"].current.value = None

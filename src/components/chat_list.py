@@ -312,7 +312,13 @@ class ChatList:
                     if is_last_message and bidx == len(aimsg_content) - 1:
                         _summary_append()   # 先挂 AI Summary, 再挂最终结果 (保证先后顺序)
                         into_summary = False
-                        blk = MessageBlockCommon.build_blk_ai_text_finally(text=msg["text"], lc_run_id=message.id, on_retry=ChatBody.callback_msg_retry)
+                        blk = MessageBlockCommon.build_blk_ai_text_finally(
+                            text=msg["text"], 
+                            lc_run_id=message.id, 
+                            on_copy=ChatBody.callback_msg_copy,
+                            on_retry=ChatBody.callback_msg_retry,
+                            on_delete=ChatBody.callback_msg_delete,
+                        )
                     # 其余 text 都属于中间过程
                     else:
                         blk = MessageBlockCommon.build_blk_ai_text(text=msg["text"], lc_run_id=message.id)
@@ -390,7 +396,12 @@ class ChatList:
         for group in all_group:
             if isinstance(group, HumanMessage):
                 # HumanMessage 仅构建一个消息块即可
-                blk_user_msg = MessageBlockCommon.build_blk_user_msg(user_msg=group.content, user_msg_id=None, on_retry=ChatBody.callback_msg_retry)
+                blk_user_msg = MessageBlockCommon.build_blk_user_msg(
+                    user_msg=group.content, 
+                    on_copy=ChatBody.callback_msg_copy,
+                    on_retry=ChatBody.callback_msg_retry,
+                    on_delete=ChatBody.callback_msg_delete,
+                )
                 EndPoints.chat["chat_body"].current.content.controls.append(blk_user_msg)
             else:
                 # 渲染一个消息块

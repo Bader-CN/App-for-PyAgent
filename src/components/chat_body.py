@@ -289,7 +289,9 @@ class ChatBody:
                     blk_ai_finally = MessageBlockCommon.build_blk_ai_text_finally(
                         text=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"),
                         lc_run_id=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("lc_run_id"),
+                        on_copy=cls.callback_msg_copy,
                         on_retry=cls.callback_msg_retry,
+                        on_delete=cls.callback_msg_delete,
                     )
                     blk_ai_summary = MessageBlockCommon.build_blk_ai_summary()
                     controls = EndPoints.chat["chat_body"].current.content.controls[-chat_number:-1]
@@ -303,7 +305,9 @@ class ChatBody:
                     blk_ai_finally = MessageBlockCommon.build_blk_ai_text_finally(
                         text=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("text"),
                         lc_run_id=EndPoints.tmp_msgs[chat_session_id]["aimsgs"][-1].get("lc_run_id"),
+                        on_copy=cls.callback_msg_copy,
                         on_retry=cls.callback_msg_retry,
+                        on_delete=cls.callback_msg_delete,
                     )
                     EndPoints.chat["chat_body"].current.content.controls[-1] = blk_ai_finally
 
@@ -776,8 +780,164 @@ class ChatBody:
         await cls.msg_update_stream(user_msg=user_msg)
 
     @classmethod
-    def callback_msg_copy(cls, e):
+    async def callback_msg_copy(cls, e):
         """
         复制消息块里的内容
+        https://flet.dev/docs/services/clipboard
         """
-        pass
+        try:
+            md_source = e.control.data["ft_markdown"].value
+            await ft.Clipboard().set(value=md_source)
+        except Exception as e:
+            logger.warning(e)
+
+    @classmethod
+    async def callback_msg_delete(cls, e):
+        """
+        删除从这之后所有的消息块 (界面 + checkpointer 双删)
+
+        Note:
+        1. 只允许在「一轮已结束」时触发
+           -> 流式期间面板尾部会被 consume_* 按 controls[-1] 原地追加 / 覆盖
+           -> 中途截断会让后续 delta 写进错误的块 (甚至 IndexError)
+           -> status 为 None 表示该会话还没建缓存, 属于空闲, 同样放行
+
+        2. 顺序: 先删库, 再删界面 (与 callback_msg_retry 相反)
+           -> 删除不可逆: 库删失败时界面保持原样, 一眼能看出没删成, 直接再点一次
+           -> 若先删界面, 库失败后两者分叉, 切走再切回内容又会「长回来」, 且没有任何提示
+
+        3. 库里保留多少, 用「界面上保留的 user_msg 块个数」反推
+
+        4. keep 永远是 messages 的前缀, 删任何内容都意味着尾部被截断
+           -> tmp_msgs 缓存的是「最后一轮」的流式块, 此时必然失效, 一并重置
+           -> tmp_msgs_state 里镜像的 error / aborted 警告同理清掉
+        """
+        # 先获取当前的 chat_session_id, 用于删除 checkpointer 中的内容
+        chat_session_id = EndPoints.runtime["session_id_chat_current"]
+        config = {"configurable": {"thread_id": chat_session_id}}
+
+        # 确保 chat_body 存在
+        chat_body = EndPoints.chat["chat_body"].current
+        if chat_body is None or chat_body.content is None:
+            logger.warning("chat_body is not ready, ignore this delete click.")
+            return
+
+        # 流式进行中不允许删除
+        status = EndPoints.tmp_msgs.get(chat_session_id, {}).get("status")
+        if status not in (None, "stop", "error", "aborted"):
+            logger.warning(f"stream is busy (status={status}), ignore this delete click. session_id={chat_session_id}")
+            return
+
+        # 获取点击的消息块类型
+        blk_type = e.control.data.get("blk_type")
+
+        # 第一步: 定位被点击的块, offset 为它的倒序 1-based 距离 (从面板末尾数第几个)
+        # -> 必须用 is 而不是 ==: ft 控件是 dataclass, == 走值比较 (ref 是 InitVar 不参与比较)
+        # -> 两轮内容完全相同的块值相等, 用 == 会命中靠后的那一个, 截断位置就错了
+        controls = chat_body.content.controls
+        offset = 0
+        for idx, control in enumerate(reversed(controls), start=1):
+            if control is e.control.data.get("blk_obj"):
+                offset = idx
+                break
+            
+        # 锚点不在当前这棵树上: 不猜, 直接放弃
+        # -> 切过会话 / 面板被重建后, data 里那个块对象可能已不在 controls 里
+        # -> 此时若改按「最近的 user_msg」去截断, 会删到另一轮的内容
+        if offset == 0:
+            logger.warning(f"delete anchor not found in chat_body, ignore this click. blk_type={blk_type}")
+            return
+
+        # 第二步: 算界面保留长度 cut_idx (保留 [0, cut_idx))
+        if blk_type == "user_msg":
+            # 用户块本身就是本轮起点 -> 连它一起删
+            cut_idx = len(controls) - offset
+        elif blk_type == "ai_msg":
+            # 删掉本轮全部 AI 输出, 但保留本轮开头那块 user_msg
+            # -> 第二次遍历只从「被点块之前」往前找: 倒序 idx 越大 = 越靠前,
+            #    所以被点块之后 (含它自己) 的 idx ∈ [1, offset] 都要跳过
+            # -> 不能从 idx = 1 (面板末尾) 开始找: 被点的是上一轮时, 会先撞上下一轮的 user_msg, 截断跨轮
+            # 兜底: 被点块之前没有 user_msg 时, 从被点块起全删
+            cut_idx = len(controls) - offset
+            for idx, control in enumerate(reversed(controls), start=1):
+                if idx <= offset:
+                    continue
+                if (control.data or {}).get("msg_type") == "user_msg":
+                    # 保留 user_msg 块本身: 它的 0-based 下标是 len - idx
+                    # -> 不能化简成 `-idx + 1`: idx=1 (user_msg 已是最后一块) 时会退化成 [:0], 把整个面板清空
+                    # -> 也不能把 offset 减进去: offset=1 时同样退化成 len - idx, 正好把 user_msg 也删掉
+                    cut_idx = len(controls) - idx + 1
+                    break
+        else:
+            logger.warning(f"unknown blk_type for delete: {blk_type}")
+            return
+
+        # 第三步: 删库 (先删库, 成功后才动界面)
+        # -> 读历史用只读空壳图, 写入必须有 agent (理由同 callback_msg_retry)
+        lc_agents = EndPoints.runtime["lc_agents"]
+        if lc_agents.state_graph_chat is None:
+            lc_agents.state_graph_chat_update()
+        snapshot = await lc_agents.state_graph_chat.aget_state(config)
+        messages = snapshot.values.get("messages", [])
+
+        # 反推库里应保留的前缀长度
+        # -> n_keep:        界面上保留的 user_msg 块个数 == 完整保留的轮数
+        # -> last_is_user:  最后一轮是否「只留下了 user 块」(该轮的 AI 输出全被删)
+        #   两种语义必须分开:  只看 n_keep 的话, 「保留 U2 但删掉第 2 轮 AI」会被误判成整轮保留
+        kept = controls[:cut_idx]
+        n_keep = sum(1 for control in kept if (control.data or {}).get("msg_type") == "user_msg")
+        last_is_user = bool(kept) and (kept[-1].data or {}).get("msg_type") == "user_msg"
+
+        # 库里所有 HumanMessage 的下标 (1 个 HumanMessage == 1 轮)
+        human_idx = [idx for idx, message in enumerate(messages) if isinstance(message, HumanMessage)]
+        if last_is_user:
+            # 保留到第 n_keep 个 HumanMessage 为止 (它这一轮的 AI 输出已从界面删掉)
+            db_cut = human_idx[n_keep - 1] + 1 if n_keep >= 1 else 0
+        else:
+            # 最后一轮整轮保留 -> 保留到第 n_keep+1 个 HumanMessage 之前
+            db_cut = human_idx[n_keep] if len(human_idx) > n_keep else len(messages)
+
+        if db_cut < len(messages):
+            errmsg = None
+            if lc_agents.agent_chat is None:
+                await lc_agents.agent_chat_update_async()
+            if lc_agents.agent_chat is None:
+                # 建不出来: 没配默认模型 / 模型配置有问题
+                errmsg = EndPoints.runtime["app_util_lang"].translate(key="delete_failed_desc")
+            else:
+                keep = messages[:db_cut]
+                try:
+                    # as_node 必须显式传 (理由同 msg_aborted_save):
+                    # 推断依赖 checkpoint 的 versions_seen, model/tools 在同一步都更新过就无法判定
+                    await lc_agents.agent_chat.aupdate_state(
+                        config,
+                        {"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *keep]},
+                        as_node="model",
+                    )
+                except Exception as ex:
+                    logger.exception(ex)
+                    errmsg = str(ex)
+            # 删库失败 => 界面保持原样 (此时它和库仍然一致), 补一个错误块告知
+            if errmsg is not None:
+                logger.error(f"Failed to delete messages, aborted: session_id={chat_session_id}, reason={errmsg}")
+                chat_body.content.controls.append(MessageBlockCommon.build_blk_err_msg(
+                    reason=EndPoints.runtime["app_util_lang"].translate(key="delete_failed"),
+                    status="error",
+                    errmsg=errmsg,
+                ))
+                EndPoints.root["page"].update()
+                return
+
+        # 第四步: 删界面 + 重置本轮缓存
+        # -> await 期间面板可能被重建 (切页 / 重渲染), 重新取一次再核对长度
+        chat_body = EndPoints.chat["chat_body"].current
+        if chat_body is None or chat_body.content is None or len(chat_body.content.controls) != len(controls):
+            # 面板已经被换掉: cut_idx 失去意义, 不再动界面
+            # -> 库已经是正确状态, 重新进入该会话会按库重渲染
+            logger.warning(f"chat_body was rebuilt during delete, skip ui truncation. session_id={chat_session_id}")
+            return
+        chat_body.content.controls = controls[:cut_idx]
+        # keep 恒为前缀 => 尾部一定被截断 => 最后一轮的流式缓存必然失效
+        EndPoints.runtime["app_util_cache"].tmp_msgs_init(session_id=chat_session_id, status="stop")
+        EndPoints.runtime["app_util_cache"].tmp_msgs_state_del(session_id=chat_session_id)
+        EndPoints.root["page"].update()

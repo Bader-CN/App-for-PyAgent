@@ -6,7 +6,7 @@ Flet 桌面应用，通过 LangChain / LangGraph 与 LLM 对话，纯 Python。D
 
 | 模块 | 状态 |
 |---|---|
-| chat 对话 | 可用：多轮对话、流式思考/工具调用/正文、中止、重试、标题总结、截图粘贴、checkpointer 持久化 |
+| chat 对话 | 可用：多轮对话、流式思考/工具调用/正文、中止、重试、删除、标题总结、截图粘贴、checkpointer 持久化 |
 | settings | 可用：语言、默认模型、模型服务（provider / model 增删改拖拽） |
 | docs | **占位**：导航到 docs 只清空会话 ID，主视图为空白 |
 | agent（deep agent） | **占位**：`agent_main` / `agent_translation` / `state_graph_agent_update` 均未实现 |
@@ -204,6 +204,20 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 - 删库失败：`status` 还原为 `error`，追加错误块并 `return`（此时 `user_msg` 块仍在，重试按钮仍可用）。
 - 成功后 `await msg_update_stream(user_msg=...)`。
 
+### 消息删除（`ChatBody.callback_msg_delete`）
+
+删除按钮挂在 `build_blk_user_msg` / `build_blk_ai_text_finally` 的删除图标上，`data={"blk_type": ..., "blk_obj": <块自身>}`，`async`（要 `await aupdate_state`）。
+
+- **守卫**：`status not in (None, "stop", "error", "aborted")` → 流式中忽略（`consume_*` 按 `controls[-1]` 原地追加，中途截断会让后续 delta 写错块）。
+- **两种语义**：`user_msg` 连自己一起删；`ai_msg` 删掉本轮全部 AI 输出、保留本轮开头那块 user_msg。
+- **定位（`offset`）**：倒序数到被点块得 1-based `offset`；`user_msg` → `cut_idx = len - offset`，`ai_msg` → 跳过 `idx <= offset` 往前找 user 块 → `cut_idx = len - idx + 1`。锚点不在树上（`offset == 0`）直接放弃，不猜。
+- **`offset` 只用于跳过，不参与减法**：写成 `len - idx - offset + 1` 时 `offset=1` 退化成 `len - idx`，正好把 user_msg 也删掉（只有 user + AI 两块时 = `[:0]` 清空面板）。
+- **顺序与重试相反：先删库，再删界面**。删除不可逆 —— 库失败时界面保持原样（两者仍一致），能直接重试；先删界面则库失败后两者分叉，切走再切回内容“长回来”且无任何提示。
+- **DB 保留边界**：`n_keep` = 界面保留的 user 块数，`last_is_user` = 保留段末块是否是 user 块。只看 `n_keep` 会误判 —— 「保留 U2 但删掉第 2 轮 AI」与「整轮保留」的 `n_keep` 都是 2。`last_is_user` 取 `human_idx[n_keep-1] + 1`（该轮只留 HumanMessage），否则取 `human_idx[n_keep]`。不用 `data["user_msg_id"]`：发送 / 读库两条路径都没传值，恒为 `None`。
+- **删完必须重置缓存**：`keep` 恒为 `messages` 前缀 → 尾部必被截断 → `tmp_msgs_init(status="stop")` + `tmp_msgs_state_del`。
+- **删库失败**：界面不动，末尾补 err 块（i18n `delete_failed` / `delete_failed_desc`）。
+- `await` 之后面板可能被重建：重新取 `chat_body` 并核对 `len(controls)`，不一致则跳过界面截断（库已是正确状态，重进会话会按库重渲染）。
+
 ### 会话列表与切换
 
 - **新建 / 删除 / 拖拽排序**：`ChatList.callback_session_add` / `callback_session_del` / `callback_sessions_reorder`，UI 与 `sort_chat.yaml` 同步。
@@ -215,7 +229,7 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 ### 其他约定
 
 - **会话 ID 互斥**：`session_id_chat_current` 与 `session_id_agent_current` 至多一个非 None；停在 docs/settings 时都为 None。ID 格式为 `<user>_chat_<uuid>` / `<user>_agent_<uuid>`，附件按 `startswith(session_prefix)` 天然隔离。
-- **重试 / 中止保存留在 `ChatBody`**：它们读写 `tmp_msgs` 状态机并跨组件改面板，不满足 common 准入；agent 侧将来各写一套，但 `as_node` 显式、`tool_calls=[]` 等机制注释只保留一份。
+- **重试 / 删除 / 中止保存留在 `ChatBody`**：它们读写 `tmp_msgs` 状态机并跨组件改面板，不满足 common 准入；agent 侧将来各写一套，但 `as_node` 显式、`tool_calls=[]` 等机制注释只保留一份。
 - **刻意复制的注释/代码不合并去重**：灰底机制注释共 4 份拷贝（`chat_header` ×2 / `settings_model_services` ×2，grep `灰底机制 ⚑` 可全数列出）；`format_markdown_style_tool_call` / `format_markdown_style_reasoning` 两份样式表同理。目的都是任意阅读入口就地自解释（Flutter 侧实测型知识，隔层引用容易被绕过）；修改时 grep 标记 / 对照孪生方法**全文同步**。此条优先于上一条——后者适用于能被单处注释覆盖的代码级机制。
 
 ## 视图层级
@@ -338,7 +352,7 @@ reasoning_level: {chat: Auto, agent: Auto}   # Off / Low / Medium / High / Auto
 - **当前做法：** `logger.error` 警告后直接返回，**不自动重置**。`conf_init()` 只在文件首次缺失时调用。
 - **未来计划：** 异常时自动备份旧配置（带时间戳 `config.yaml.bak.20260101`）再生成默认配置，设最大备份保留数、超限清理最旧的。
 
-## Flet 布局陷阱
+## Flet 陷阱（布局 / 更新 / 定位）
 
 ### `ft.IconButton` padding 默认值
 
@@ -394,6 +408,46 @@ ft.PopupMenuButton(
 
 Flet 1.0.x 下直接替换整个 `ListTile` 有时不刷新；只改某个字段（如 `trailing`）后调用 `control.update()` 更稳（见 `callback_provider_switch_btn_toggle`）。
 
+### 控件 self-reference：构造表达式内读自己 → 必须两段式
+
+在控件自己的构造表达式里读它自己的名字，不是风格问题，是**硬报错**：
+
+```python
+# ❌ UnboundLocalError: cannot access local variable 'ai_msg_blk'
+ai_msg_blk = ft.Container(
+    ft.Column(controls=[
+        ft.IconButton(..., data={"blk_obj": ai_msg_blk}),   # 读自己
+    ])
+)
+```
+
+机制：方法体内出现赋值 → 编译期把该名定为**局部变量** → 参数求值阶段它尚未绑定。不是拿到 `None`，是直接抛异常。
+
+**规避：先建壳 → 再填 content**（`build_blk_user_msg` / `build_blk_ai_text_finally` 的实际写法）：
+
+```python
+ai_msg_blk = ft.Container(data={...}, padding=...)   # 先绑定
+ai_msg_blk.content = ft.Column(controls=[... data={"blk_obj": ai_msg_blk} ...])
+```
+
+只要 `data` / 闭包 / 回调参数要引用控件自身，就该两段式。备选（不推荐）：先塞 `None` 占位再回填 —— 需要额外持有子控件变量，比两段式啰嗦。
+
+### `page.update()` 是「立刻 diff 并下发」，不是打标记
+
+`Page.update()` → `session.patch_control(page)`，同步把当前状态推给客户端。因此**同一回调里多次赋值 + 中途 update** 会出问题：
+
+```python
+# ❌ 客户端停在第 1 步的中间态
+controls = controls[:a]; page.update()      # 推到「删了一半」
+controls = controls[:b]                      # 服务端已变, 客户端不知道 → 观感是「点了没用」
+```
+
+规则：**先算完最终值，再赋值一次、update 一次**。
+
+### 控件定位用 `is`，不要用 `==`
+
+`ft` 控件是 dataclass，`==` 走**值比较**（`ref` 是 `InitVar`，不参与比较）。两轮内容完全相同的块**值相等**，用 `==` 会命中靠后的那一个 → 截断 / 删除位置就错了。跨块定位一律 `control is target`。
+
 ## LangChain 注意事项
 
 LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / `reasoning` / `reasoning_details`）。本项目**不改 site-packages**，而是在 `src/cores/lc_hotfix_openai.py` 用子类覆盖 `_convert_chunk_to_generation_chunk`（等效 README 的 Patch ①）。
@@ -404,7 +458,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 - 已知遗留：content 变为 list 后，后续纯文本 delta 可能以裸字符串 append，应用侧读回时由 `MessageUtilsCommon.format_ai_msg_content` 归一化。
 - **v1 content block**：`reasoning` / `text` / `tool_call` 是当前读写的统一形状；写入中止消息时显式带 `response_metadata.output_version="v1"`，避免再次按 provider 规则翻译。
 - **`aupdate_state` 必须显式 `as_node="model"`**：checkpoint 的 `versions_seen` 可能同时有 model / tools，LangGraph 推断会抛 `InvalidUpdateError: Ambiguous update`。
-- **删除最近一轮**：`{"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *keep]}`；`REMOVE_ALL_MESSAGES` 的重设语义见 `callback_msg_retry` 注释。
+- **删除消息 / 删除最近一轮**：`{"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *keep]}`，`keep` 恒为前缀；`REMOVE_ALL_MESSAGES` 的重设语义见 `callback_msg_retry` 注释（`callback_msg_delete` 同款）。
 - **中止补写**：`tool_calls=[]` 必须留空；复用半成品 AIMessage 的 `id` 才能原地替换。
 - 测试：`tests/test_lc_hotfix_openai.py`（离线，含 v3 契约与基线对照）。
 
@@ -440,7 +494,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 - `InputCommon.build_blk_input_attachment` 的 `display_name` 只在文件名含 `_screenshot_` 时赋值；其他附件类型会 `UnboundLocalError`（当前只接截图，未触发）。
 - `msg_aborted_save` 未判断 `agent_chat is None`，会走到 `aupdate_state` 抛 `AttributeError` 并被 `except` 吞掉 → aborted 内容静默不入库。
 - `msg_update_stream` 正常结束分支直接取 `aimsgs[-1]`；模型没有产出任何块时会 `IndexError`。
-- `callback_msg_title_summary` 依赖 `last_user_msg` / `last_ai_msg` 同时存在，否则 `summary_msgs` 未定义。
+- `callback_msg_title_summary` 依赖 `last_user_msg` / `last_ai_msg` 同时存在，否则 `summary_msgs` 未定义。**已被 `try/except` 兜住，后果仅「标题不更新」不会崩**；且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。
 - `ProfileUtils.default_model` 对已删除的 provider 会 `AttributeError`（配置异常未做防御，符合当前策略）。
 - README 的运行路径与手工 patch 说明已过时，以本文件 + `src/cores/lc_hotfix_openai.py` 为准。
 
