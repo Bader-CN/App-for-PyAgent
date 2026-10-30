@@ -96,7 +96,7 @@ class ChatView:
         self.chat_body.expand = True
         self.chat_body.margin = ft.Padding.symmetric(horizontal=10, vertical=0)
         self.chat_body.content = None   # 防止 ft.Ref 弱引用 产生的 GC 陷阱
-        self.chat_body.content = ft.Column(
+        self.chat_body.content = ft.Column(          
             scroll=ft.ScrollMode.AUTO,
             ############################
             # 自动跟随到底部 (原生实现, 不需手写 on_scroll 状态机)
@@ -107,13 +107,12 @@ class ChatView:
             auto_scroll=True,
             auto_scroll_animation=0,
             ############################
-
-            ############################
             # 交叉轴 (即宽度) 铺满: 让每个消息块拿到 maxWidth 的紧约束, 从而横向填满 chat_body
             # -> 本 Column 主轴是竖直 => 那两行管的是高度; 且 scroll 让主轴无界
             # -> Flutter 会把带 flex 的子控件当普通子控件布局, expand 连高度都撑不起来
-            # 注意: 本参数不能再用来右对齐
-            # 消息块右对齐需改用 ft.Row(alignment=ft.MainAxisAlignment.END, controls=[blk]) 包裹
+            # 注意: 本参数不能再用来右对齐 (它会让整行等宽, 所有消息块一起被拉满)
+            # -> user_msg 的右对齐 + 气泡贴身由 MessageBlockCommon.build_blk_user_msg 内层 Column 负责
+            # -> 不要用 ft.Row(alignment=END) 包消息块: Row 给子控件无界主轴宽度, 长文本不换行直接溢出
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             ############################
         )

@@ -394,7 +394,28 @@ ft.PopupMenuButton(
 
 ### 滚动列里的 `expand`
 
-`ft.Column(scroll=...)` 的主轴无界，子控件上的 `expand=True` 既撑不起高度也不撑宽度。横向铺满靠 `horizontal_alignment=ft.CrossAxisAlignment.STRETCH`；需要右对齐时用 `ft.Row(alignment=ft.MainAxisAlignment.END, controls=[...])` 包一层。
+`ft.Column(scroll=...)` 的主轴无界，子控件上的 `expand=True` 既撑不起高度也不撑宽度。横向铺满靠 `horizontal_alignment=ft.CrossAxisAlignment.STRETCH`。
+
+**右对齐不要用 `ft.Row(...)` 包一层**（旧结论，已被实测推翻）：`ft.Row` 会给子控件**无界主轴宽度**，长文本因此不换行直接溢出。正确做法见下一节。
+
+### 消息块宽度：贴身 vs 铺满 —— `Container.alignment` 会先吃满父级
+
+**`Container.alignment` 非 `None` ⇒ 容器先占满父级可用宽度，再在里面摆 content。**
+`flet/controls/material/container.py` 文档原文：非 `None` 时该容器会 *expand to fill the available space from its parent*。所以「用 `alignment=ft.Alignment.CENTER_RIGHT` 让内容右对齐」的写法会把**整个容器**拉成整行宽 —— `user_msg` 绿条铺满整行正是这个原因（`common.py` 旧版 `user_msg_body`）。
+
+宽度只由「父级交叉轴给紧约束还是松约束」决定：
+
+| 层级 | 设置 | 效果 |
+|---|---|---|
+| `chat_body` 的 Column | `horizontal_alignment=STRETCH` | 给**直接子控件**紧宽度 W |
+| `user_msg` 外层 Column | `horizontal_alignment=END` | 给孩子 **loose(0..W)** ⇒ 可收缩，且靠右 |
+| 气泡 Container | **不设 `alignment`** | 内容按最长行收缩；长文本到 W 才换行 |
+
+- `ft.Markdown` 自己就能收缩，**不需要**换 `ft.Text`（实测短句 40px vs 42px，差值只是 padding / 边框）
+- ⛔ 只把外层交叉轴改成 END、气泡仍带 `alignment` → 仍是整行（alignment 一票否决交叉轴，实测）
+- ⛔ `ft.Column(intrinsic_width=True)` 再包一层在这里**完全等价于不包**（逐项数值一致），别当保险用
+- 判据口径：`on_size_change` + `size_change_interval=0`，把标签塞 `control.data` 后 `print(e.width)` → 终端读客观像素宽度（截图肉眼判断不可靠）；⚠️ 首轮渲染在字体加载前，数值偏小，取字体就绪后的第二轮
+- 实测数据与对照见 `tests/probe_user_bubble_width.py`；生效实现见 `MessageBlockCommon.build_blk_user_msg`
 
 ### `ExpansionTile` 的边框与高度
 

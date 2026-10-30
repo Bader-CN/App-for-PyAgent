@@ -365,12 +365,26 @@ class MessageBlockCommon:
         - on_retry:     重试按钮的回调
         - on_delete:    删除按钮的回调
 
+        Note:
+        宽度行为: 短文本只有文字那么宽 (贴右侧), 长文本到面板宽度才换行
+        - 由「外层 Column 交叉轴 END + 气泡 Container 不设 alignment」实现
+        - 不要给气泡设 alignment: Container.alignment 非 None 时会先吃满父级可用宽度 -> 整行绿
+        - 不要用 ft.Row 包消息块: Row 给子控件无界主轴宽度 -> 长文本不换行直接溢出
+        - 实测数据见 tests/probe_user_bubble_width.py
+
         Return:
         - Flet Container 控件对象
         """
         # 提前创建最外层组件, 用于变量引用
+        # 交叉轴 END: 让「宽度不足整行的子控件」(气泡) 靠右, 按钮行本就是主轴 END
+        # -> 本 Column 从父级拿到紧宽度 (chat_body 的 Column 是 STRETCH)
+        # -> 交叉轴非 STRETCH 时子控件拿到的是 loose(0..W), Markdown 会按最长行收缩
+        # -> 短句贴身 / 长句到 W 才换行, 两种宽度行为都由这一处决定
         user_msg_blk = ft.Container(
-            content=ft.Column(spacing=5),
+            content=ft.Column(
+                spacing=5,
+                horizontal_alignment=ft.CrossAxisAlignment.END,
+            ),
         )
 
         # 整理消息
@@ -386,6 +400,9 @@ class MessageBlockCommon:
 
         # 用户消息体控件
         user_msg_body = ft.Container(
+            # 不要设 alignment: 非 None 时 Container 会先吃满父级可用宽度再摆 content
+            # -> 气泡变成整行绿 (外层交叉轴是 END 也救不回来, 探针里 B2 已实测)
+            # -> 右对齐统一交给 user_msg_blk 内层 Column 的 horizontal_alignment
             mser_msg_md:=ft.Markdown(
                 value=text,
                 md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
@@ -428,42 +445,54 @@ class MessageBlockCommon:
                     # 复制按钮
                     ft.Container(
                         content=ft.IconButton(
-                            icon=ft.Icons.COPY, 
-                            icon_size=14, 
+                            # 默认图标偏瘦, 因此对图标重新进行了缩放
+                            icon=ft.Icon(
+                                ft.Icons.COPY,
+                                size=14,
+                                scale=ft.Scale(scale_x=1.1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                            ),
                             padding=0,
                             on_click=on_copy,
                             data={"ft_markdown": mser_msg_md},
                         ),
-                        width=18,
-                        height=18,
+                        width=20,
+                        height=20,
                     ),
                     # 重试按钮
                     ft.Container(
-                        # ft.Icons.REFRESH / ft.Icons.LOOP
+                        # 备选: ft.Icons.AUTORENEW / ft.Icons.REFRESH / ft.Icons.LOOP
                         content=ft.IconButton(
-                            icon=ft.Icons.AUTORENEW,
-                            icon_size=14,
+                            # 图标库里没有反方向的, 因此对图标左右翻转了一下
+                            icon=ft.Icon(
+                                ft.Icons.CACHED,
+                                size=18,
+                                scale=ft.Scale(scale_x=-1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                            ),
                             padding=0,
                             on_click=on_retry,
                         ),
-                        width=18,
-                        height=18,
+                        width=20,
+                        height=20,
                     ),
                     # 删除按钮
                     ft.Container(
                         content=ft.IconButton(
-                            icon=ft.Icons.DELETE_OUTLINE,
-                            icon_size=14,
+                            # 默认图标偏瘦, 因此对图标重新进行了缩放
+                            icon=ft.Icon(
+                                ft.Icons.DELETE_OUTLINE,
+                                size=17,
+                                scale=ft.Scale(scale_x=1.1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                            ),
                             padding=0,
                             on_click=on_delete,
                             data={"blk_type": "user_msg", "blk_obj": user_msg_blk},
                         ),
-                        width=18,
-                        height=18,
+                        width=20,
+                        height=20,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.END,
-                spacing=5,
+                spacing=10,
                 margin=ft.Margin.only(right=10),
             )
         )
@@ -736,43 +765,55 @@ class MessageBlockCommon:
                         # 复制按钮
                         ft.Container(
                             content=ft.IconButton(
-                                icon=ft.Icons.COPY, 
-                                icon_size=14, 
+                                # 默认图标偏瘦, 因此对图标重新进行了缩放
+                                icon=ft.Icon(
+                                    ft.Icons.COPY,
+                                    size=14,
+                                    scale=ft.Scale(scale_x=1.1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                                ),
                                 padding=0,
                                 on_click=on_copy,
                                 data={"ft_markdown": ai_msg_md},
                             ),
-                            width=18,
-                            height=18,
+                            width=20,
+                            height=20,
                         ),
                         # 重试按钮
                         ft.Container(
-                            # ft.Icons.REFRESH / ft.Icons.LOOP
+                            # 备选: ft.Icons.AUTORENEW / ft.Icons.REFRESH / ft.Icons.LOOP
                             content=ft.IconButton(
-                                icon=ft.Icons.AUTORENEW, 
-                                icon_size=14, 
-                                padding=0, 
+                                # 图标库里没有反方向的, 因此对图标左右翻转了一下
+                                icon=ft.Icon(
+                                    ft.Icons.CACHED,
+                                    size=18,
+                                    scale=ft.Scale(scale_x=-1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                                ),
+                                padding=0,
                                 on_click=on_retry
                             ),
-                            width=18,
-                            height=18,
+                            width=20,
+                            height=20,
                         ),
                         # 删除按钮
                         ft.Container(
                             content=ft.IconButton(
-                                icon=ft.Icons.DELETE_OUTLINE,
-                                icon_size=14,
+                                # 默认图标偏瘦, 因此对图标重新进行了缩放
+                                icon=ft.Icon(
+                                    ft.Icons.DELETE_OUTLINE,
+                                    size=17,
+                                    scale=ft.Scale(scale_x=1.1, scale_y=1.0, alignment=ft.Alignment.CENTER),
+                                ),
                                 padding=0,
                                 on_click=on_delete,
                                 data={"blk_type": "ai_msg", "blk_obj": ai_msg_blk},
                             ),
-                            width=18,
-                            height=18,
+                            width=20,
+                            height=20,
                         ),
                     ],
-                    alignment=ft.MainAxisAlignment.END,
-                    spacing=5,
-                    margin=ft.Margin.only(right=10),
+                    alignment=ft.MainAxisAlignment.START,
+                    spacing=10,
+                    margin=ft.Margin.only(left=10),
                 )
             ],
             spacing=5,
