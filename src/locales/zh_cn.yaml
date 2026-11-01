@@ -17,6 +17,12 @@ font_family: "字体"
 font_family_global: "全局字体"
 font_family_text: "文本字体"
 font_family_code: "代码字体"
+proxy_config: "代理配置"
+proxy_address: "代理地址"
+proxy_ignore: "忽略规则"
+web_search: "网页搜索"
+web_search_proxy: "搜索代理"
+web_search_engine: "搜索引擎"
 
 # 默认模型
 default_chat_model: "对话模型"

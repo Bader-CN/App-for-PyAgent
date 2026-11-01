@@ -17,6 +17,12 @@ font_family: "Font Family"
 font_family_global: "Font Family Global"
 font_family_text: "Font Family Text"
 font_family_code: "Font Family Code"
+proxy_config: "Proxy Config"
+proxy_address: "Proxy Address"
+proxy_ignore: "Ignore Rules"
+web_search: "Web Search"
+web_search_proxy: "Search Proxy"
+web_search_engine: "Search Engine"
 
 # Default Models
 default_chat_model: "Chat Model"

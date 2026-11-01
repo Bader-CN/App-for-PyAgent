@@ -1,3 +1,7 @@
+import ipaddress
+import re
+from urllib.parse import urlparse
+
 import flet as ft
 from src.endpoints import EndPoints
 from src.utils.logging import logger
@@ -191,6 +195,172 @@ class SettingsGeneral:
         return blk_switch_font_family
 
     @classmethod
+    def build_blk_proxy(cls):
+        """
+        标题: 代理配置
+        """
+        blk_proxy = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("proxy_config"), 
+                        weight=ft.FontWeight.BOLD,
+                        data={"i18n_key": "proxy_config"},
+                    )
+                ],
+            )
+        )
+        return blk_proxy
+
+    @classmethod
+    def build_blk_proxy_address(cls):
+        """
+        代理地址
+        """
+        blk_proxy_addr = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        value=EndPoints.runtime["app_util_lang"].translate("proxy_address"),
+                        data={"i18n_key": "proxy_address"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.TextField(
+                        value=EndPoints.runtime["app_util_profile"].proxy_address(),
+                        text_size=13,
+                        text_style=ft.TextStyle(size=13),
+                        hint_text="http://localhost:1080",
+                        dense=True,
+                        content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
+                        on_blur=cls.callback_proxy_address,
+                    ),
+                ],
+            )
+        )
+        return blk_proxy_addr
+
+    @classmethod
+    def build_blk_proxy_ignore(cls):
+        """
+        代理的忽略地址
+        """
+        blk_proxy_ignore = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        value=EndPoints.runtime["app_util_lang"].translate("proxy_ignore"),
+                        data={"i18n_key": "proxy_ignore"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.TextField(
+                        value=EndPoints.runtime["app_util_profile"].proxy_ignore(),
+                        text_size=13,
+                        text_style=ft.TextStyle(size=13),
+                        hint_text="localhost,127.0.0.1",
+                        dense=True,
+                        content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
+                        on_blur=cls.callback_proxy_ignore,
+                    ),
+                ],
+            )
+        )
+        return blk_proxy_ignore
+
+    @classmethod
+    def build_blk_web_search(cls):
+        """
+        标题: 网络搜索
+        """
+        blk_web_search = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search"), 
+                        weight=ft.FontWeight.BOLD,
+                        data={"i18n_key": "web_search"},
+                    )
+                ],
+            )
+        )
+        return blk_web_search
+
+    @classmethod
+    def build_blk_web_search_engine(cls):
+        """
+        网络搜索引擎切换
+        """
+        all_web_search_engine = EndPoints.runtime["web_search_engine"]
+        blk_switch_web_engine = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search_engine"),
+                        data={"i18n_key": "web_search_engine"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.PopupMenuButton(
+                        # 关闭鼠标悬浮时显示的默认值: "Show menu"
+                        # https://flet.dev/docs/controls/control
+                        tooltip="",
+                        # 显示的内容
+                        content = ft.Row(
+                            controls=[
+                                ft.Container(
+                                    content = ft.Text(
+                                        value=EndPoints.runtime["app_util_profile"].web_search_engine(), 
+                                        size=14,
+                                        ref=EndPoints.settings["web_search_engine"],
+                                    ),
+                                ), 
+                                ft.Container(
+                                    content=ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=13),
+                                    padding=ft.Padding(left=0, top=2, right=0, bottom=0),
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        # 可选子项 - 此处使用了列表表达式 [x for x in all_web_engine_list]
+                        items=[
+                            ft.PopupMenuItem(
+                                content=search_engine, height=32,
+                                on_click=cls.callback_web_search_engine,   # 可以利用 e.control 来获取对象本身
+                                data={"search_engine": search_engine},     # flet 对象本身可以利用 .data 来挂载自定义数据
+                            )
+                            for search_engine in all_web_search_engine
+                        ],
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        return blk_switch_web_engine
+
+    @classmethod
+    def build_blk_web_search_proxy(cls):
+        """
+        构建 Web 搜索代理开关组件
+        """
+        blk_web_search_proxy = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search_proxy"),
+                        data={"i18n_key": "web_search_proxy"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.Switch(
+                        height=20,
+                        padding=ft.Padding.symmetric(vertical=0, horizontal=0),
+                        value=EndPoints.runtime["app_util_profile"].web_search_proxy(),
+                        on_change=cls.callback_web_search_proxy,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        return blk_web_search_proxy
+
+    @classmethod
     def callback_language_switch(cls, e: ft.ControlEvent):
         """
         回调函数 - 用于切换语言
@@ -243,6 +413,156 @@ class SettingsGeneral:
         elif font_type == "code":
             EndPoints.runtime["app_util_profile"].font_family_code_set(font_family=font_family)
             EndPoints.settings["font_family_code"].current.value = font_family
+
+    @classmethod
+    def callback_proxy_address(cls, e):
+        """
+        回调函数 - 更新 proxy address 的值
+
+        校验规则:
+        - 空值 / 不合法 -> 仅记录日志, 不写入配置
+        - 合法 -> 写入 profile.yaml
+
+        合法形式: <scheme>://<host>[:<port>], 例如 "http://localhost:8080" 或 ”socks5://127.0.0.1:8080"
+        """
+        # 空值忽略
+        proxy_addr = (e.control.value or "").strip()
+        if not proxy_addr:
+            logger.warning("proxy address is empty, skip saving")
+            return
+        # 拆分出 scheme / host / port, 非法 IPv6 / 越界端口都会抛 ValueError
+        try:
+            parsed = urlparse(proxy_addr)
+            scheme = parsed.scheme
+            host = parsed.hostname
+            parsed.port
+        except ValueError:
+            logger.warning(f"invalid proxy address: {proxy_addr}")
+            return
+        # 1. scheme 必须在白名单内
+        if scheme not in ("http", "https", "socks4", "socks5", "socks5h"):
+            logger.warning(f"invalid proxy address (scheme): {proxy_addr}")
+            return
+        # 2. 必须有 host
+        if not host:
+            logger.warning(f"invalid proxy address (host): {proxy_addr}")
+            return
+        # 保存合法的设定值
+        EndPoints.runtime["app_util_profile"].proxy_address_set(proxy_addr=proxy_addr)
+
+    @classmethod
+    def callback_proxy_ignore(cls, e):
+        """
+        回调函数 - 更新 proxy ignore 的值
+
+        校验规则:
+        - 按逗号拆成单条规则, 逐条校验, 只保留合法的规则
+        - 空值 / 全部不合法 -> 仅记录日志, 不写入配置
+
+        合法形式: <host>[:<port>], 支持域名 / IPv4 / IPv6 / CIDR, 例如 "localhost"、"127.0.0.1"、".example.com"、"192.168.0.0/16"
+        """
+        raw_value = (e.control.value or "").strip()
+        # 空值忽略
+        if not raw_value:
+            logger.warning("proxy ignore is empty, skip saving")
+            return
+
+        # 逗号产生的空项直接丢弃, 不算错误
+        entries = [item.strip() for item in raw_value.split(",") if item.strip()]
+        valid_items = []
+        for item in entries:
+            # 拆分 host / port:
+            # - [IPv6]:port 用方括号区分冒号
+            # - 仅当只有一个冒号时才可能是 host:port (裸写 IPv6 含多个冒号)
+            host, port = item, ""
+            if item.startswith("["):
+                end = item.find("]")
+                if end == -1:
+                    logger.warning(f"invalid proxy ignore entry (bracket): {item}")
+                    continue
+                host, rest = item[1:end], item[end + 1:]
+                if rest.startswith(":"):
+                    port = rest[1:]
+                elif rest:
+                    logger.warning(f"invalid proxy ignore entry (bracket): {item}")
+                    continue
+            elif item.count(":") == 1:
+                host, port = item.split(":", 1)
+
+            # 1. 端口可选, 一旦给出就必须是合法端口号
+            if port and not (port.isdigit() and 0 < int(port) <= 65535):
+                logger.warning(f"invalid proxy ignore entry (port): {item}")
+                continue
+
+            # 2. 域名 / 通配域名去掉前导 "*." 或 "."
+            domain = host[2:] if host.startswith("*.") else host.lstrip(".")
+            if not domain:
+                logger.warning(f"invalid proxy ignore entry (empty host): {item}")
+                continue
+
+            # 3. IP / CIDR / 域名 三者任一通过即视为合法
+            try:
+                ipaddress.ip_address(domain)
+            except ValueError:
+                try:
+                    ipaddress.ip_network(domain, strict=False)
+                except ValueError:
+                    is_domain = bool(
+                        len(domain) <= 253
+                        and re.fullmatch(
+                            r"[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?"
+                            r"(?:\.[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*",
+                            domain,
+                        )
+                    )
+                    if not is_domain:
+                        logger.warning(f"invalid proxy ignore entry (host): {item}")
+                        continue
+
+            valid_items.append(item)
+
+        # 没有任何合法规则 -> 不写入配置
+        if not valid_items:
+            logger.warning(f"proxy ignore has no valid entry, skip saving: {raw_value}")
+            return
+
+        proxy_ignore = ",".join(valid_items)
+        # 有规则被剔除时提示实际写入的内容
+        if len(valid_items) != len(entries):
+            logger.warning(f"proxy ignore has invalid entry, saved: {proxy_ignore}")
+        # 保存合法的设定值
+        EndPoints.runtime["app_util_profile"].proxy_ignore_set(proxy_ignore=proxy_ignore)
+
+    @classmethod
+    def callback_web_search_engine(cls, e: ft.ControlEvent):
+        """
+        回调函数 - 用于切换搜索引擎
+        """
+        # 利用 flet 的机制
+        # e.control 可以获取到 PopupMenuItem 对象本身
+        # data 可以挂载自定义数据
+        search_engine = e.control.data.get("search_engine")
+
+        if search_engine != EndPoints.runtime["app_util_profile"].web_search_engine():
+            # 更改配置文件
+            EndPoints.runtime["app_util_profile"].web_search_engine_set(web_search_engine=search_engine)
+            # 修改界面上显示的值
+            EndPoints.settings["web_search_engine"].current.value = search_engine
+
+    @classmethod
+    def callback_web_search_proxy(cls, e: ft.ControlEvent):
+        """
+        回调函数 - 用于切换搜索引擎代理
+
+        Args:
+        - e: ft.ControlEvent, e.control 为 ft.Switch, e.control.value 为开关当前值
+        """
+        # Switch 的 value 即最新的开关状态
+        web_search_proxy = bool(e.control.value)
+
+        if web_search_proxy != EndPoints.runtime["app_util_profile"].web_search_proxy():
+            # 更改配置文件
+            EndPoints.runtime["app_util_profile"].web_search_proxy_set(web_search_proxy=web_search_proxy)
 
     @classmethod
     def refresh_i18n(cls, control: ft.BaseControl | None):

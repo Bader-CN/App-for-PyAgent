@@ -58,6 +58,12 @@ class SettingsView:
         self.blk_font_global = SettingsGeneral.build_blk_font_family_switch(font_type="global") # 全局字体
         self.blk_font_text = SettingsGeneral.build_blk_font_family_switch(font_type="text")     # 全局字体
         self.blk_font_code = SettingsGeneral.build_blk_font_family_switch(font_type="code")     # 全局字体
+        self.blk_proxy = SettingsGeneral.build_blk_proxy()
+        self.blk_proxy_addr = SettingsGeneral.build_blk_proxy_address()
+        self.blk_proxy_ignore = SettingsGeneral.build_blk_proxy_ignore()
+        self.blk_web_search = SettingsGeneral.build_blk_web_search()
+        self.blk_web_search_engine = SettingsGeneral.build_blk_web_search_engine()
+        self.blk_web_search_proxy = SettingsGeneral.build_blk_web_search_proxy()
         # 子组件: 默认服务部分
         # 在这里创建主要是为了解决 Python 弱引用问题可能会导致对象被回收, 进而在调用时会出现 None 的问题
         self.blk_models = None # 模型列表
@@ -152,6 +158,36 @@ class SettingsView:
                         border_radius=5,
                         padding=ft.Padding.symmetric(vertical=5, horizontal=10),
                     ),
+                    # 代理模式
+                    ft.Container(
+                        ft.Column(
+                            controls=[
+                                self.blk_proxy,
+                                ft.Divider(height=1),
+                                self.blk_proxy_addr,
+                                ft.Divider(height=1),
+                                self.blk_proxy_ignore,
+                            ],
+                        ),
+                        border=ft.Border.all(color=ft.Colors.GREY_400),
+                        border_radius=5,
+                        padding=ft.Padding.symmetric(vertical=5, horizontal=10),
+                    ),
+                    # 网络搜索
+                    ft.Container(
+                        ft.Column(
+                            controls=[
+                                self.blk_web_search,
+                                ft.Divider(height=1),
+                                self.blk_web_search_proxy,
+                                ft.Divider(height=1),
+                                self.blk_web_search_engine,
+                            ],
+                        ),
+                        border=ft.Border.all(color=ft.Colors.GREY_400),
+                        border_radius=5,
+                        padding=ft.Padding.symmetric(vertical=5, horizontal=10),
+                    )
                 ],
             )
 

@@ -34,10 +34,6 @@ class ConfigUtils:
             """
             # 初始化配置文件
             self.app_conf_dict = {
-                # 通用设置
-                "general_settings": {
-                    "language": "zh_cn",
-                },
                 # 模型服务
                 "model_providers": {
                     "default_provider_1": {
@@ -370,6 +366,10 @@ class ProfileUtils:
                 "font_family_global": "Microsoft YaHei",
                 "font_family_text": "Microsoft YaHei",
                 "font_family_code": "Consolas",
+                "proxy_address": None,
+                "proxy_ignore": "localhost, 127.0.0.1",
+                "web_search_engine": "Bing",
+                "web_search_proxy": False,
             },
             # 默认模型
             "default_models": {
@@ -624,6 +624,102 @@ class ProfileUtils:
         """
         try:
             self.app_user_dict["general_settings"]["font_family_code"] = font_family
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def proxy_address(self):
+        """
+        获取代理地址
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            proxy_addr = general_settings.get("proxy_address", "")
+            return proxy_addr
+        except Exception as e:
+            logger.error(e)
+
+    def proxy_address_set(self, proxy_addr: str):
+        """
+        设置代理地址
+
+        Args:
+        - proxy_addr: str 代理地址字符串, 例如 "http://localhost:8080" 或 "socks5://localhost:8080"
+        """
+        try:
+            self.app_user_dict["general_settings"]["proxy_address"] = proxy_addr
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def proxy_ignore(self):
+        """
+        代理的忽略规则
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            proxy_ignore = general_settings.get("proxy_ignore", "localhost, 127.0.0.1")
+            return proxy_ignore
+        except Exception as e:
+            logger.error(e)
+
+    def proxy_ignore_set(self, proxy_ignore: str):
+        """
+        设置代理的忽略规则
+
+        Args:
+        - proxy_ignore: str 代理忽略规则的字符串, 例如 "localhost, 127.0.0.1"
+        """
+        try:
+            self.app_user_dict["general_settings"]["proxy_ignore"] = proxy_ignore
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_engine(self):
+        """
+        获取当前的网络搜索引擎
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            web_search_engine = general_settings.get("web_search_engine", "Bing")
+            return web_search_engine
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_engine_set(self, web_search_engine: str):
+        """
+        设置代理的忽略规则
+
+        Args:
+        - web_search_engine: str 网络搜索引擎的字符串
+        """
+        try:
+            self.app_user_dict["general_settings"]["web_search_engine"] = web_search_engine
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_proxy(self):
+        """
+        是否启用网络搜索代理
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            web_search_proxy = general_settings.get("web_search_proxy", False)
+            return web_search_proxy
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_proxy_set(self, web_search_proxy: bool):
+        """
+        设置网络搜索代理的设定值
+
+        Args:
+        - web_search_proxy: bool
+        """
+        try:
+            self.app_user_dict["general_settings"]["web_search_proxy"] = web_search_proxy
             self.conf_save()
         except Exception as e:
             logger.error(e)

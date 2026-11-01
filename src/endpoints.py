@@ -57,6 +57,7 @@ class EndPoints:
         "font_family_global": ft.Ref[ft.Text](),
         "font_family_text": ft.Ref[ft.Text](),
         "font_family_code": ft.Ref[ft.Text](),
+        "web_search_engine": ft.Ref[ft.Text](),
     }
 
     # 视图对象
@@ -85,6 +86,8 @@ class EndPoints:
         "app_util_filedata": None,
         # 应用运行时的语言
         "app_language": None,
+        # 内嵌可选搜索引擎
+        "web_search_engine": ["Bing", "DuckDuckGo"],
         # 支持的协议
         "llm_protocol": ["OpenAI", "Ollama"],
         # 设置界面最后点击的提供商详情

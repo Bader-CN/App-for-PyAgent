@@ -18,6 +18,7 @@ pip install -U PyYAML
 pip install -U pillow
 pip install -U loguru
 pip install -U aiosqlite
+pip install -U beautifulsoup4
 # 测试 (可选, 仅运行 tests/ 时需要)
 pip install -U pytest pytest-asyncio
 ```

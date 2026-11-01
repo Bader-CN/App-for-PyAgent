@@ -23,6 +23,7 @@ dependencies = [
     "pillow>=12.3.0",
     "requests>=2.34.2",
     "aiosqlite>=0.22.1",
+    "beautifulsoup4>=4.15.0",
 ]
 
 [dependency-groups]

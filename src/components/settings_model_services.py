@@ -8,7 +8,6 @@ class SettingsModelServices:
     """
     模型服务
     """
-
     @classmethod
     def build_blk_provider_btn_add(cls):
         """
