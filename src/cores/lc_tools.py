@@ -200,9 +200,6 @@ class HTML_Utils:
         "tr", "table", "thead", "tbody", "dl", "dt", "dd", "section", "article",
         "blockquote", "pre", "hr", "figcaption", "main",
     }
-    # 返回给模型的最大字符数: 防止整页 HTML 撑爆 context
-    MAX_CHARS = 128000
-
     @staticmethod
     def collapse_whitespace(text):
         """
@@ -361,8 +358,9 @@ class HTML_Utils:
 
         text = HTML_Utils.collapse_whitespace(soup.get_text())
 
-        if len(text) > HTML_Utils.MAX_CHARS:
+        max_chars = EndPoints.runtime["app_util_profile"].web_search_max_length()
+        if len(text) > max_chars:
             total = len(text)
-            text = text[:HTML_Utils.MAX_CHARS] + f"\n\n[内容已截断: 仅显示前 {HTML_Utils.MAX_CHARS} / {total} 字符]"
+            text = text[:max_chars] + f"\n\n[内容已截断: 仅显示前 {max_chars} / {total} 字符]"
 
         return text

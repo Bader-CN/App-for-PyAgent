@@ -163,3 +163,6 @@ storage/
 
 # Test
 tests/
+
+# Found issues
+issues/

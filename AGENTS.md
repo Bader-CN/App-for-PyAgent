@@ -114,11 +114,28 @@ class SettingsView:
 
 ### 进阶陷阱：`Prop` 相等跳过让「重建 + 挂 content」也失效
 
-即使把控件挂进 `self.xxx.content`，只要容器**每次渲染重建子树**，仍可能被 GC：
+即使把控件挂进 `self.xxx.content`，只要容器**每次渲染重建子树**，这次赋值仍可能被**静默丢弃**：
 
-- `Container.content` 等字段是 Flet 的 `Prop` 描述符。赋值时若新旧值 **dataclass 值相等** 会直接跳过存储（`ref` 是 `InitVar` 不参与比较）——同工厂、同参数、同状态重建的两棵子树**值相等**。
-- 于是新子树未被存储 → 其中的新控件无强引用 → 立即被 GC → `ref.current` 变回 `None`。
-- **界面仍显示旧的（活着），ref 却指向刚丢弃的（已死）**。首次渲染正常；**切走再切回且状态未变**才触发。
+- `Container.content` 等字段是 Flet 的 `Prop` 描述符（`flet/controls/value_types.py::Prop.__set__`）。赋值时若新旧值 **dataclass 值相等**会直接 `return`，什么也不存。
+- 同工厂、同参数、同状态重建的两棵子树必然值相等：`ref` 是 `InitVar`（`base_control.py:232`）、`_i` 是 `compare=False`（`base_control.py:212`），**都不参与 `__eq__`**。
+- 所谓「同状态」很容易被运行期数据决定：输入框为空且无附件时，两次构建的输入面板才相等；**留了草稿或附件反而不相等**，于是这个 bug 表现得「时好时坏、概率不高」。
+
+**后果分两种，取决于新子树是否被 `self.xxx` 锚定**（本项目 `render_lv2` 里 `self.input_panel = ...` 正是锚定）：
+
+| | 子树被 `self` 锚定 | 子树未被锚定 |
+|---|---|---|
+| 丢弃的是 | 只是外层容器 | 外层容器 + 无其他强引用的子控件 |
+| `ref.current` | **有效，但指向未显示的新控件** | 变回 `None` |
+| 症状 | **静默错数据**（不报错，只是写不进去 / 显示不同步） | 延迟抛 `AttributeError: 'NoneType' object has no attribute ...` |
+| 触发时机 | 下一次事件回调 | 下一次碰 `ref.current` 的回调 |
+
+静默错数据的机理：客户端只按 **control id** 上报改值（`UPDATE_CONTROL_PROPS`），服务端 `session.apply_patch` 只在 `__index` 里按 id 查控件（`flet/messaging/session.py:303`）——**只有真正下发过的那份才收得到用户输入**。于是：
+
+- 用户敲进**界面那份**（旧控件）
+- 服务端读 `ref.current`（新控件）→ 恒为空
+- 回写 `ref.current.value = ""` 也落在新控件上 → **界面上的字清不掉**
+
+**共同判据：`ref` 指向的控件 ≠ 界面上显示的控件。** 这是这类 bug 的唯一特征，比记“哪个被 GC 了”实用得多。
 
 **规避：先清后赋（clear-then-set）**
 
@@ -131,23 +148,30 @@ self.chat_input.content = ft.Column(controls=[...])
 
 diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所以 UI 会真正切到新子树，ref / UI / 强引用三者一致。
 
-#### 自检清单：四条同时成立 → 必踩，写代码时就该先清后赋
+#### 自检清单：以下特征同时成立 → 必踩，写代码时就该先清后赋
 
 | # | 特征 |
 |---|---|
 | 1 | 容器**每次渲染重建**子树（`content = ft.Column([...])`） |
 | 2 | 子树内带 `ref`，且是 `EndPoints` 里的**全局 ref** |
 | 3 | 存在**值相等**赋值的可能（同工厂、同参数、同状态重建） |
-| 4 | 失败**延迟暴露**（要等某次事件回调才炸，如 `on_hover` / `on_click`） |
+| 4 | 失败**延迟暴露**（要等某次事件回调才炸或才出错数据，如 `on_hover` / `on_click`） |
+| 5 | **容器内容整体替换**（`self.xxx.content = Column([...])`）——即使子树里没有 ref 也会踩：`chat_body.content` 被跳过后，后续 `content.controls.clear() / append()` 全作用在界面不显示的 Column 上 |
 
-隐蔽性来自「病因在赋值行静默跳过，报错在几百毫秒后的另一个回调里」，中间还隔着一次切页。
+隐蔽性来自「病因在赋值行静默跳过，报错（或错数据）出现在几百毫秒后的另一个回调里」，中间还隔着一次切页。
 
 #### ⛔ 反直觉：这类问题**不要**用「锚定子树保活」修
 
 把实例存到 View 的 `self` 会**更糟**：保活让 `ref` 指向**未被存储、界面也不显示**的新控件，而事件（hover/click）来自界面上那个旧控件 → 静默错数据。
 **只有先清后赋能保证 ref / 界面 / 强引用三者落在同一棵新子树上。**
 
-已确认案例：`chat_input`（切走再切回且状态未变）、`chat_view.render_lv2`（设置 `chat_body` / `chat_input` 均先清后赋）。
+已确认案例：
+
+| 位置 | 失效对象 | 表现 |
+|---|---|---|
+| `chat_input`（切走再切回且状态未变） | 面板 + 内部 `input_textfield` ref | 输入框有字但发送提示 `input content is empty`，且字清不掉 |
+| `chat_view.render_lv2` 的 `lv2_view.content` | 输入面板整体 | 同上（ref 绑新面板、界面挂旧面板） |
+| `chat_view.render_lv2` 的 `chat_body.content` | 消息 Column | 切会话后 `controls.clear()` 清的是未显示的 Column，旧消息残留 |
 
 ## i18n 自动刷新（语言切换）
 
@@ -246,12 +270,13 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 - **ChatView** — Lv1（会话列表）+ 可拖拽分割线 + Lv2（`chat_header` / `chat_body` / 输入面板）。
   - 分割线：`GestureDetector` 7px 热区，`lv1_width` 限制在 200–300，`on_pan_end` 写入 `profile.yaml`。
   - `chat_body` 的 `ft.Column` 用 `scroll=AUTO` + `horizontal_alignment=STRETCH`；横向铺满由 STRETCH 负责（`expand` 在滚动列里无效）。
-  - 输入面板在 `render_lv2` **每次重建**（`InputCommon.build_blk_input_panel(tools=ChatInput.build_blk_input_tools())`），并对 `chat_body` / 输入面板**先清后赋**。
+  - 输入面板在 `render_lv2` **每次重建**（`InputCommon.build_blk_input_panel(tools=ChatInput.build_blk_input_tools())`），并对 **`lv2_view.content` / `chat_body.content`** 一律**先清后赋**（两处都不能省，理由见上方自检清单第 1/3/5 条）。
 
 ## 组件设计约定
 
 - 工厂方法用 `build_blk_***` 前缀，`@classmethod`；调用一次后存进 View 实例变量，**不要反复调用**
 - ⚠️ 若工厂返回的子树内含 `ref` 且被挂到**每次重建**的容器上，赋值时务必**先清后赋**（见上方自检清单）
+- ⚠️ 判据不是「我有没有强引用它」，而是「**这份控件这次真的下发给客户端了吗**」；`ref.current` 不为 `None` 也可能是错的（指向未显示的那份）
 - `build_blk_*` 用于**可复用**的块；**单次使用且由回调触发**的渲染允许内联构建（命名 `callback_*_render`）
 - 跨组件通信走 `EndPoints`（有状态）；**无状态积木可直接 import**
 - 当前组件工厂：`chat_list` / `chat_header` / `chat_body` / `chat_input`（对话）、`settings_general`（国际化）、`settings_model_services`（模型服务）、`settings_default_models`（默认模型）、`common`（`AlertCommon` / `MessageUtilsCommon` / `MessageBlockCommon` / `InputCommon`）

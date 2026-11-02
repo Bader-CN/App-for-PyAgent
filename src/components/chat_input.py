@@ -194,11 +194,17 @@ class ChatInput:
             # 消息数据
             # https://docs.langchain.com/oss/python/langchain/messages#message-content
             user_msg = []
-            ft_btn.icon = ft.Icons.STOP
             # 整理: 文字部分
-            user_text = EndPoints.input["input_textfield"].current.value
-            if user_text.strip() != "":
-                user_msg.append({"type": "text", "text": user_text.strip()})
+            # value 可能是 None: 本方法在发送成功 / 空内容时都会清空输入框
+            # -> 历史实现清空写的是 None, 而 TextField.value 声明为 str, 故读取时必须归一化
+            # -> 否则下一次空输入发送会抛 AttributeError: 'NoneType' object has no attribute 'strip'
+            textfield = EndPoints.input["input_textfield"].current
+            if textfield is None:
+                logger.warning("input_textfield not available, ignore this call.")
+                return
+            user_text = (textfield.value or "").strip()
+            if user_text != "":
+                user_msg.append({"type": "text", "text": user_text})
             # 整理: 附件部分
             controls = EndPoints.input["input_attachments"].current.controls
             if controls:
@@ -209,6 +215,10 @@ class ChatInput:
                         user_msg.append({"type": "image", "url": img_data})
             # user_msg 不能是非空
             if user_msg:
+                # 发送图标切 STOP 必须在确认要真正发送之后
+                # -> 放在方法开头会让后续任何异常留下「服务端 STOP / 客户端 SEND」的分叉
+                # -> 分叉后快捷键守卫 (icon == SEND) 永久失效, 且下一次 update 会把停止图标推给客户端
+                ft_btn.icon = ft.Icons.STOP
                 # 渲染 user_msg
                 user_msg_blk = MessageBlockCommon.build_blk_user_msg(
                     user_msg=user_msg, 
@@ -217,40 +227,49 @@ class ChatInput:
                     on_delete=ChatBody.callback_msg_delete,
                 )
                 EndPoints.chat["chat_body"].current.content.controls.append(user_msg_blk)
-                # 清空内容和附件
-                EndPoints.input["input_textfield"].current.value = None
+                # 清空内容和附件 (写空串而非 None, 与 TextField.value: str 的声明保持一致)
+                textfield.value = ""
                 EndPoints.input["input_attachments"].current.controls.clear()
                 EndPoints.runtime["app_util_cache"].clipboard_image_del(session_prefix=EndPoints.runtime["session_id_chat_current"])
                 # 异步调用 (发送图标的终止条件不在这里判断, 而在 ChatBody.update_msg_stream 中来判断)
                 page.run_task(ChatBody.msg_update_stream, user_msg=user_msg)
             else:
-                ft_btn.icon = ft.Icons.SEND
-                EndPoints.input["input_textfield"].current.value = None
+                # 图标从未切换, 无需恢复
+                textfield.value = ""
                 logger.warning("input content is empty, ignoring this click action.")
                 page.update()
         # 基于图标判断: 终止消息
         else:
             # 基于 session_id 来修改数据状态
             chat_session_id = EndPoints.runtime["session_id_chat_current"]
+            # 缓存可能不存在: 图标与状态是两条独立的状态机
+            # -> 上文任何异常中止都会让服务端 icon 停在 STOP, 而本轮 tmp_msgs 可能根本没建立
+            # -> 此时点击按钮属于无效点击, 恢复图标即可, 不能抛 KeyError 造成二次崩溃
+            tmp_msgs = EndPoints.tmp_msgs.get(chat_session_id)
+            if tmp_msgs is None:
+                logger.warning(f"tmp_msgs not found (session_id={chat_session_id}), restore send icon and ignore this stop click.")
+                ft_btn.icon = ft.Icons.SEND
+                page.update()
+                return
             # 已经终止过了: 忽略本次点击
             # -> 图标已切回 SEND, 正常点不到第二次; 但快速双击 / 键盘事件仍可能进来
-            if EndPoints.tmp_msgs[chat_session_id]["status"] in ["error", "aborted"]:
-                logger.warning(f"chat stream already terminated (status={EndPoints.tmp_msgs[chat_session_id]['status']}), ignore this stop click. session_id={chat_session_id}")
+            if tmp_msgs["status"] in ["error", "aborted"]:
+                logger.warning(f"chat stream already terminated (status={tmp_msgs['status']}), ignore this stop click. session_id={chat_session_id}")
                 return
-            EndPoints.tmp_msgs[chat_session_id]["status"] = "aborted"
-            EndPoints.tmp_msgs[chat_session_id]["reason"] = EndPoints.runtime["app_util_lang"].translate(key="request_was_aborted")
+            tmp_msgs["status"] = "aborted"
+            tmp_msgs["reason"] = EndPoints.runtime["app_util_lang"].translate(key="request_was_aborted")
             # 立即持久化一次: 用户可能按完停止就关程序
             EndPoints.runtime["app_util_cache"].tmp_msgs_state_update(
                 session_id=chat_session_id,
                 status="aborted",
-                reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
+                reason=tmp_msgs["reason"],
             )
             # 立即渲染错误块, 不等 update_msg_stream 的收尾
             # -> 收尾要先等 asyncio.gather 返回, 而工具静默期没有任何 delta, 可能要干等几秒 (实测 3.5s)
             # -> 按钮回调是同步且即时的, 放这里用户一按就能看到
             # -> 因此收尾那边只负责 error 的渲染 (aborted 已在本次处理, 避免重复)
             EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_err_msg(
-                reason=EndPoints.tmp_msgs[chat_session_id]["reason"],
+                reason=tmp_msgs["reason"],
                 status="aborted",
                 on_retry=ChatBody.callback_msg_retry,
             ))

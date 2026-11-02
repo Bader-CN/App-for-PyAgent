@@ -362,14 +362,19 @@ class ProfileUtils:
         self.app_user_dict = {
             # 通用设置
             "general_settings": {
+                # 国际化
                 "language": "zh_cn",
+                # 字体
                 "font_family_global": "Microsoft YaHei",
                 "font_family_text": "Microsoft YaHei",
                 "font_family_code": "Consolas",
+                # 代理配置
                 "proxy_address": None,
                 "proxy_ignore": "localhost, 127.0.0.1",
+                # 网页搜索
                 "web_search_engine": "Bing",
                 "web_search_proxy": False,
+                "web_search_max_length": 128000,
             },
             # 默认模型
             "default_models": {
@@ -720,6 +725,33 @@ class ProfileUtils:
         """
         try:
             self.app_user_dict["general_settings"]["web_search_proxy"] = web_search_proxy
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_max_length(self):
+        """
+        网络搜索时允许返回的最大字符串长度
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            web_search_max_length = general_settings.get("web_search_max_length", 128000)
+            return web_search_max_length
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_max_length_set(self, web_search_max_length: int):
+        """
+        设置网络搜索时允许返回的最大字符串长度
+
+        Args:
+        - web_search_max_length: int
+        """
+        try:
+            if web_search_max_length <= 0:
+                web_search_max_length = 128000
+                logger.warning(f"web_search_max_length can't be less than 0. will reset to {web_search_max_length}")
+            self.app_user_dict["general_settings"]["web_search_max_length"] = web_search_max_length
             self.conf_save()
         except Exception as e:
             logger.error(e)

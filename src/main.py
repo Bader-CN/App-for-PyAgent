@@ -93,8 +93,14 @@ def listen_keyboard(e: ft.KeyboardEvent):
     if e.shift and e.key == "Enter" and EndPoints.runtime["session_id_chat_current"] is not None:
         send_btn = EndPoints.input["input_send_btn"].current
         # 仅在发送按钮存在 & 图标处于可发送时才会触发
-        if send_btn is not None and send_btn.icon == ft.Icons.SEND:
+        if send_btn is None:
+            # 区分「ref 失效 (切页重建中)」与「图标停在 STOP (上一轮异常分叉)」
+            # -> 两者对用户都是「快捷键没反应」, 但排查方向完全不同
+            logger.warning("input_send_btn not available, ignore this keyboard send.")
+        elif send_btn.icon == ft.Icons.SEND:
             ChatInput.callback_send_user_msg()
+        else:
+            logger.warning(f"send icon is not SEND ({send_btn.icon}), ignore this keyboard send.")
 
     # 情况2: Chat 界面 & 剪切板 (Ctrl + V & session_id_chat_current 不能为 None)
     elif e.ctrl and e.key == "V" and EndPoints.runtime["session_id_chat_current"] is not None:

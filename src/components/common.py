@@ -411,6 +411,7 @@ class MessageBlockCommon:
                 extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                 soft_line_break=True,                               # 对齐 white-space: pre-line
                 selectable=True,
+                on_tap_link=cls.callback_open_url,
             ),
             padding=ft.Padding.symmetric(vertical=3, horizontal=5),
             border=ft.border.Border.all(width=1, color=ft.Colors.GREEN_200),
@@ -586,6 +587,7 @@ class MessageBlockCommon:
                         extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                         soft_line_break=True,                               # 对齐 white-space: pre-line
                         selectable=True,
+                        on_tap_link=cls.callback_open_url,
                     ),
                 ],
                 # 保持控件状态, 防止展开后重新渲染引发的闪烁
@@ -679,6 +681,7 @@ class MessageBlockCommon:
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
             soft_line_break=True,                               # 对齐 white-space: pre-line
             selectable=True,
+            on_tap_link=cls.callback_open_url,
         )
         return tool_call_content_blk
 
@@ -759,6 +762,7 @@ class MessageBlockCommon:
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                     soft_line_break=True,                               # 对齐 white-space: pre-line
                     selectable=True,
+                    on_tap_link=cls.callback_open_url,
                 ),
                 ft.Row(
                     controls=[
@@ -973,6 +977,21 @@ class MessageBlockCommon:
         # 展开 -> 隐藏副标题 / 收缩 -> 显示副标题
         e.control.subtitle.visible = not bool(e.data)
         e.control.update()
+
+    @classmethod
+    async def callback_open_url(cls, e):
+        """
+        打开 URL 的回调函数
+        - 绑定在 ft.Markdown.on_tap_link 上
+        - e.data 就是被点击的 URL
+
+        Note:
+        - Flet 1.0.x 移除了 Page.launch_url, 改用 UrlLauncher 服务
+        - UrlLauncher 是 Service, 构造时自动注册到当前 page(context.page), 无需手动增删
+        - 必须 await: launch_url 是协程, 因此本回调声明为 async
+        """
+        launcher = ft.UrlLauncher()
+        await launcher.launch_url(e.data)
 
 
 class InputCommon:

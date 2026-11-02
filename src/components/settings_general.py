@@ -230,6 +230,7 @@ class SettingsGeneral:
                         text_size=13,
                         text_style=ft.TextStyle(size=13),
                         hint_text="http://localhost:1080",
+                        hint_style=ft.TextStyle(size=13, color=ft.Colors.GREY_500),
                         dense=True,
                         content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
                         on_blur=cls.callback_proxy_address,
@@ -257,6 +258,7 @@ class SettingsGeneral:
                         text_size=13,
                         text_style=ft.TextStyle(size=13),
                         hint_text="localhost,127.0.0.1",
+                        hint_style=ft.TextStyle(size=13, color=ft.Colors.GREY_500),
                         dense=True,
                         content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
                         on_blur=cls.callback_proxy_ignore,
@@ -359,6 +361,35 @@ class SettingsGeneral:
             ),
         )
         return blk_web_search_proxy
+
+    @classmethod
+    def build_blk_web_search_max_length(cls):
+        """
+        构建 Web 搜索单次搜索所返回的最大字符长度组件
+        """
+        blk_web_search_max_length = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search_max_length"),
+                        data={"i18n_key": "web_search_max_length"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.TextField(
+                        value=EndPoints.runtime["app_util_profile"].web_search_max_length(),
+                        text_size=13,
+                        text_style=ft.TextStyle(size=13),
+                        hint_text="128000",
+                        hint_style=ft.TextStyle(size=13, color=ft.Colors.GREY_500),
+                        dense=True,
+                        content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
+                        on_blur=cls.callback_web_search_max_length,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        return blk_web_search_max_length
 
     @classmethod
     def callback_language_switch(cls, e: ft.ControlEvent):
@@ -559,10 +590,19 @@ class SettingsGeneral:
         """
         # Switch 的 value 即最新的开关状态
         web_search_proxy = bool(e.control.value)
-
         if web_search_proxy != EndPoints.runtime["app_util_profile"].web_search_proxy():
             # 更改配置文件
             EndPoints.runtime["app_util_profile"].web_search_proxy_set(web_search_proxy=web_search_proxy)
+
+    @classmethod
+    def callback_web_search_max_length(cls, e:ft.ControlEvent):
+        """
+        回调函数 - 用于修改网络搜索结果的最大长度
+        """
+        max_length = int(e.control.value)
+        if max_length != EndPoints.runtime["app_util_profile"].web_search_max_length():
+            # 更改配置文件
+            EndPoints.runtime["app_util_profile"].web_search_max_length_set(web_search_max_length=max_length)
 
     @classmethod
     def refresh_i18n(cls, control: ft.BaseControl | None):

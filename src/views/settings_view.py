@@ -64,6 +64,7 @@ class SettingsView:
         self.blk_web_search = SettingsGeneral.build_blk_web_search()
         self.blk_web_search_engine = SettingsGeneral.build_blk_web_search_engine()
         self.blk_web_search_proxy = SettingsGeneral.build_blk_web_search_proxy()
+        self.blk_web_search_max_length = SettingsGeneral.build_blk_web_search_max_length()
         # 子组件: 默认服务部分
         # 在这里创建主要是为了解决 Python 弱引用问题可能会导致对象被回收, 进而在调用时会出现 None 的问题
         self.blk_models = None # 模型列表
@@ -182,6 +183,8 @@ class SettingsView:
                                 self.blk_web_search_proxy,
                                 ft.Divider(height=1),
                                 self.blk_web_search_engine,
+                                ft.Divider(height=1),
+                                self.blk_web_search_max_length,
                             ],
                         ),
                         border=ft.Border.all(color=ft.Colors.GREY_400),

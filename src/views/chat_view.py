@@ -71,10 +71,15 @@ class ChatView:
         self.lv1_view.width = EndPoints.runtime["app_util_profile"].chat_view_lv1_width()
         # 绘制基础视图
         # ===============================
-        # 防止 ft.Ref 弱引用 产生的 GC 陷阱
-        # 如果2次赋值的内容完全相同, 则新控件不会被赋值, 而是直接被回收
-        # 界面上存在的则是老控件, 此刻 ref 指向的新控件已经消失了, 所以会出现 None 的错误
-        # 解决方法是先赋值一次 None, 规避掉 flet 本身的优化操作, 然后在重新赋值即可解决
+        # 先清后赋: 防「值相等跳过」
+        # 病因: Container.content 是 Prop 描述符 (flet/controls/value_types.py::Prop.__set__)
+        # -> old == value 时直接 return, 赋值被静默丢弃
+        # 必踩条件: ref 是 InitVar / _i 是 compare=False, 都不参与 __eq__
+        # -> 同工厂、同参数、同状态重建出的子树必然值相等
+        # 本处的后果: 丢弃的是整棵新 Column, 其中 sessions_list 只被 ft.Ref (弱引用) 指着
+        # -> 新控件被 GC => ref.current 变 None
+        # -> 下一次点会话按钮 / 取 controls 时抛 AttributeError
+        # 判据: ref 指向的控件 ≠ 界面上显示的控件
         # ===============================
         self.lv1_view.content = None
         self.lv1_view.content = ft.Column(
@@ -95,7 +100,11 @@ class ChatView:
         # 聊天内容
         self.chat_body.expand = True
         self.chat_body.margin = ft.Padding.symmetric(horizontal=10, vertical=0)
-        self.chat_body.content = None   # 防止 ft.Ref 弱引用 产生的 GC 陷阱
+        # 先清后赋: 防「值相等跳过」(机制与必踩条件见 render_lv1 的注释)
+        # -> 本处丢弃的是消息 Column 本身
+        # -> 后续 controls.clear() / append() 都作用在 self.chat_body.content 上, 它指向哪一份, 完全取决于这次赋值有没有被存下来
+        # -> 一旦「存下来的」≠「界面上显示的」, 清空 / 追加就落在看不见的树上 => 静默错数据
+        self.chat_body.content = None
         self.chat_body.content = ft.Column(          
             scroll=ft.ScrollMode.AUTO,
             ############################
@@ -123,6 +132,15 @@ class ChatView:
         self.input_panel = InputCommon.build_blk_input_panel(tools=ChatInput.build_blk_input_tools())
         # 渲染整体布局
         self.lv2_view.expand = True
+        # 先清后赋: 防「值相等跳过」(机制与必踩条件见 render_lv1 的注释)
+        # -> 本处必须做: input_panel 是上面刚重建的, 且被 self.input_panel 锚定
+        #    => 不会被 GC, ref.current 也不为 None; 但「值相等跳过」会让它挂不上界面
+        # -> 后果: 界面挂旧面板, ref 已绑新面板 (构造期绑定 ref.current = self)
+        #    客户端按 control id 上报改值 (UPDATE_CONTROL_PROPS), 只有真正下发过的那份收得到
+        #    => 用户敲进旧面板, 发送时读 ref 的新面板 -> 恒为空, 且字清不掉
+        # -> 触发条件: 切走再切回 chat, 且期间没有草稿 / 附件
+        #    (留了草稿或附件时新旧面板不等, 赋值真会发生, 反而不触发)
+        self.lv2_view.content = None
         self.lv2_view.content = ft.Column(
             controls=[
                 self.chat_header,
