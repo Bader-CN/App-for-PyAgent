@@ -1,5 +1,6 @@
 import flet as ft
 from src.endpoints import EndPoints
+from src.components.common import MessageUtilsCommon
 from src.utils.logging import logger
 
 
@@ -60,12 +61,16 @@ class ChatHeader:
         """
         重新生成标题
         """
-        title_rename = ft.IconButton(
-            icon=ft.Icons.REFRESH,
-            padding=0,
-            height=28,
-            width=28,
-            data={"session_id": session_id},
+        title_rename = ft.Container(
+            ft.IconButton(
+                icon=ft.Icons.REFRESH,
+                padding=0,
+                icon_size=20,
+                data={"session_id": session_id},
+                on_click=cls.callback_title_rename,
+            ),
+            height=22,
+            width=22,
         )
         return title_rename
 
@@ -83,6 +88,7 @@ class ChatHeader:
                 ft.Container(expand=True),
                 cls.build_blk_title_rename(session_id),
             ],
+            margin=ft.Margin.only(right=6),
         )
         # 渲染到界面上
         EndPoints.chat["chat_header"].current.content = blk_header
@@ -144,3 +150,12 @@ class ChatHeader:
         # 失焦: 恢复透明底色
         e.control.bgcolor = ft.Colors.TRANSPARENT
         e.control.update()
+
+    @classmethod
+    def callback_title_rename(cls, e):
+        """
+        重命名标题
+        """
+        session_id = e.control.data.get("session_id")
+        if session_id is not None:
+            EndPoints.root["page"].run_task(MessageUtilsCommon.msg_title_summary_chat, session_id)

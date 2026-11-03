@@ -8,7 +8,7 @@ from src.components.common import AlertCommon
 from src.components.common import MessageUtilsCommon
 from src.components.common import MessageBlockCommon
 from src.utils.logging import logger
-from langchain.messages import SystemMessage, HumanMessage, AIMessage, RemoveMessage
+from langchain.messages import HumanMessage, AIMessage, RemoveMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 
@@ -323,7 +323,7 @@ class ChatBody:
             sessions = EndPoints.chat["chat_list"].current.controls
             for session in sessions:
                 if session.data.get("session_id") == chat_session_id and session.data.get("title") == EndPoints.runtime["app_util_lang"].translate(key="new_session"):
-                    EndPoints.root["page"].run_task(cls.callback_msg_title_summary, chat_session_id)
+                    EndPoints.root["page"].run_task(MessageUtilsCommon.msg_title_summary_chat, chat_session_id)
                     break
 
     @classmethod
@@ -611,62 +611,6 @@ class ChatBody:
                     EndPoints.root["page"].update()
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
-
-    @classmethod
-    async def callback_msg_title_summary(cls, chat_session_id: str, e=None):
-        """
-        消息摘要处理函数
-
-        Args:
-        - chat_session_id:  对应会话ID
-        """
-        try:
-            # 基于 "会话ID" 获取所有的历史消息
-            config = {"configurable": {"thread_id": chat_session_id}}
-            if EndPoints.runtime["lc_agents"].state_graph_chat is None:
-                EndPoints.runtime["lc_agents"].state_graph_chat_update()
-            snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
-            messages = snapshot.values.get("messages", [])
-
-            # 获取指定类型的 messages
-            last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
-            last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
-            if last_user_msg and last_ai_msg:
-                # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
-                summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
-                # 组装消息
-                summary_msgs = [
-                    SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
-                    HumanMessage(summary_text),
-                ]
-
-            # 调用模型并总结标题
-            if EndPoints.runtime["lc_agents"].agent_summary is None:
-                EndPoints.runtime["lc_agents"].agent_summary_update()
-
-            # 确保话题总结模型不为 None
-            if EndPoints.runtime["lc_agents"].agent_summary is not None:
-                response = EndPoints.runtime["lc_agents"].agent_summary.invoke(summary_msgs)
-                summary_title = str(response.text)
-                # 渲染界面
-                sessions = EndPoints.chat["chat_list"].current.controls
-                for session in sessions:
-                    if session.data.get("session_id") == chat_session_id:
-                        session.title = ft.Text(summary_title)
-                        session.data["title"] = summary_title
-                        if chat_session_id == EndPoints.runtime["session_id_chat_current"]:
-                            EndPoints.chat["chat_header"].current.content.controls[0].content.value = summary_title
-                        break
-                EndPoints.root["page"].update()
-                # 保持数据 (sessions 数据类型为 list)
-                sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
-                for idx, session_dict in enumerate(sessions):
-                    if session_dict.get("session_id") == chat_session_id:
-                        sessions[idx]["title"] = summary_title
-                        EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
-                        break
-        except Exception as e:
-            logger.warning(e)
 
     @classmethod
     async def callback_msg_retry(cls, e):

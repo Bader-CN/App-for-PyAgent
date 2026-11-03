@@ -142,6 +142,13 @@ class ChatList:
             cls.callback_session_add()
             cls.callback_session_msgs_render()
             EndPoints.root["page"].update()
+        # 如果会话列表非空, 则以最后一个会话为当前会话
+        else:
+            control = EndPoints.chat["chat_list"].current.controls[-1]
+            act_session_id = control.data["session_id"]
+            act_title = control.data["title"]
+            cls.callback_session_msgs_render(session_id=act_session_id, title=act_title)
+            EndPoints.root["page"].update()
 
     @classmethod
     def callback_session_msgs_render(cls, e=None, session_id=None, title=None):

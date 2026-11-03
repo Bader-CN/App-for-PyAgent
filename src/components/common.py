@@ -6,11 +6,12 @@
    本文件 common.py 里只定义类似积木的组件模块, 不包含复杂的业务逻辑(尽可能独立成孤立的模块)
    -> 所有操作尽可能局限于在本类自己, 尽量不要跨越别的组件
 """
+import asyncio
 import copy
 import flet as ft
 from src.endpoints import EndPoints
 from src.utils.logging import logger
-from langchain.messages import AIMessage, ToolMessage
+from langchain.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 
 class AlertCommon:
@@ -313,6 +314,85 @@ class MessageUtilsCommon:
             h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
             h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
         )
+
+    @classmethod
+    async def msg_title_summary_chat(cls, chat_session_id: str, e=None):
+        """
+        消息摘要处理函数 - 针对 chat
+        
+        Args:
+        - chat_session_id:  对应会话ID
+        """
+        # 判断当前会话是否已经在进行标题总结
+        title_summarizing = EndPoints.tmp_title_summarizing.get(chat_session_id, False)
+        if title_summarizing:
+            logger.warning("title is being summarized, ignore this request.")
+            return
+        EndPoints.tmp_title_summarizing[chat_session_id] = True
+
+        try:
+            # 基于 "会话ID" 获取所有的历史消息
+            config = {"configurable": {"thread_id": chat_session_id}}
+            if EndPoints.runtime["lc_agents"].state_graph_chat is None:
+                EndPoints.runtime["lc_agents"].state_graph_chat_update()
+            snapshot = await EndPoints.runtime["lc_agents"].state_graph_chat.aget_state(config)
+            messages = snapshot.values.get("messages", [])
+
+            # 获取指定类型的 messages
+            last_user_msg = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+            last_ai_msg = next((m for m in reversed(messages) if isinstance(m, AIMessage) and m.text), None)
+            # 缺任一条都无法拼出总结输入
+            # -> 在这里显式放弃, 避免后面 summary_msgs 未绑定抛 UnboundLocalError 被 except 吞掉
+            # -> return 会经过 finally, 标记位照常复位
+            if last_user_msg is None or last_ai_msg is None:
+                logger.warning(f"missing user/ai message, skip title summary: {chat_session_id}")
+                return
+            # 拼接消息 - 最后一条 HumanMessage 的文本部分 + AIMessage 最终输出部分
+            summary_text = f"User Question: {last_user_msg}; AI Response: {last_ai_msg}"
+            # 组装消息
+            summary_msgs = [
+                SystemMessage(f"You are a helpful assistant, please summarize the conversation in {EndPoints.runtime["app_language"]}, as few as possible under 10 words."),
+                HumanMessage(summary_text),
+            ]
+
+            # 调用模型并总结标题
+            if EndPoints.runtime["lc_agents"].agent_summary is None:
+                EndPoints.runtime["lc_agents"].agent_summary_update()
+
+            # 确保话题总结模型不为 None
+            if EndPoints.runtime["lc_agents"].agent_summary is not None:
+                # invoke 是同步阻塞调用, 直接写在 async def 里会卡住整个 event loop
+                # -> 只把「模型调用」挪进线程, 线程内不触碰任何 ft 控件
+                # -> 后续界面渲染仍留在主线程
+                response = await asyncio.to_thread(EndPoints.runtime["lc_agents"].agent_summary.invoke, summary_msgs)
+                summary_title = str(response.text)
+                # 渲染界面
+                # -> await 期间可能已切页并重建子树, 重新取 ref 并判空
+                chat_list = EndPoints.chat["chat_list"].current
+                sessions = chat_list.controls if chat_list is not None else None
+                for session in sessions or []:
+                    if session.data.get("session_id") == chat_session_id:
+                        session.title = ft.Text(summary_title)
+                        session.data["title"] = summary_title
+                        chat_header = EndPoints.chat["chat_header"].current
+                        if chat_session_id == EndPoints.runtime["session_id_chat_current"] and chat_header is not None:
+                            chat_header.content.controls[0].content.value = summary_title
+                        break
+                EndPoints.root["page"].update()
+                # 保持数据 (sessions 数据类型为 list)
+                # -> 与上面的界面控件列表区分开, 这里是磁盘数据 (list[dict])
+                sessions = EndPoints.runtime["app_util_filedata"].data_read(data_type="sort_chat")
+                for idx, session_dict in enumerate(sessions):
+                    if session_dict.get("session_id") == chat_session_id:
+                        sessions[idx]["title"] = summary_title
+                        EndPoints.runtime["app_util_filedata"].data_save(data_type="sort_chat", data_cont=sessions)
+                        break
+
+        except Exception as e:
+            logger.warning(e)
+        finally:
+            # 退出标题总结标记位
+            EndPoints.tmp_title_summarizing[chat_session_id] = False
 
     @classmethod
     def session_id_current(cls):
@@ -1074,19 +1154,23 @@ class InputCommon:
         attachment = ft.Container(
             ft.Row(
                 controls=[
-                    ft.Text(value=display_name, size=14),
+                    ft.Text(value=display_name, size=12),
                     ft.IconButton(
-                        icon=ft.Icon(ft.Icons.CANCEL, size=14),
-                        height=28, width=28,
+                        icon=ft.Icon(ft.Icons.CANCEL, size=13),
+                        height=18, width=18,
                         padding=0,
                         data={"type": file_type, "filename": file_name},
                         on_click=cls.callback_attachment_del,
                     ),
                 ],
+                spacing=0,
             ),
             # 数据外部也保留一份, 这样比较好获取
             data={"type": file_type, "filename": file_name},
             bgcolor=ft.Colors.GREY_300,
+            padding=ft.Padding(left=5, right=0, top=0, bottom=0),
+            border_radius=5,
+            height=20,
         )
         return attachment
 

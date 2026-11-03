@@ -540,7 +540,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 - `InputCommon.build_blk_input_attachment` 的 `display_name` 只在文件名含 `_screenshot_` 时赋值；其他附件类型会 `UnboundLocalError`（当前只接截图，未触发）。
 - `msg_aborted_save` 未判断 `agent_chat is None`，会走到 `aupdate_state` 抛 `AttributeError` 并被 `except` 吞掉 → aborted 内容静默不入库。
 - `msg_update_stream` 正常结束分支直接取 `aimsgs[-1]`；模型没有产出任何块时会 `IndexError`。
-- `callback_msg_title_summary` 依赖 `last_user_msg` / `last_ai_msg` 同时存在，否则 `summary_msgs` 未定义。**已被 `try/except` 兜住，后果仅「标题不更新」不会崩**；且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。
+- `MessageUtilsCommon.msg_title_summary_chat` 要求 `last_user_msg` / `last_ai_msg` 同时存在，缺失时已改为 `logger.warning` + `return`（不再走 `UnboundLocalError` 被吞的旧路径）。防重入标记位 `EndPoints.tmp_title_summarizing` 的形状是**守卫/置位在 `try` 之外 + `finally` 复位**：守卫的 `return` 绝不能经过 `finally`（会清掉正在进行那一轮的标记位 → 并发重复总结），复位用 `pop(..., None)`。模型调用经 `asyncio.to_thread` 执行，之后的界面渲染留在主线程。且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。
 - `ProfileUtils.default_model` 对已删除的 provider 会 `AttributeError`（配置异常未做防御，符合当前策略）。
 - README 的运行路径与手工 patch 说明已过时，以本文件 + `src/cores/lc_hotfix_openai.py` 为准。
 
