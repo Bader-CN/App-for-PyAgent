@@ -2,8 +2,8 @@ import os
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 
 
 class FileDataUtils:
@@ -11,8 +11,9 @@ class FileDataUtils:
     用户的文件级数据工具类
     """
     def __init__(self):
-        # App 运行时的根目录
-        self.app_path_root = EndPoints.runtime["app_path_root"]
+        # 可写数据目录 (FLET_APP_STORAGE_DATA, 回退 <repo>/storage/data)
+        # 打包后 bundle 只读, 不能再基于 app_path_root 拼 storage/ 路径
+        self.app_path_data = EndPoints.runtime["app_path_data"]
         # App 数据字典
         self.app_data_dict = {
             "sort_chat": None,      # 聊天界面的会话列表
@@ -29,7 +30,7 @@ class FileDataUtils:
         """
         try:
             logger.debug(f"initializing default data_type file: {data_type}")
-            filepath = os.path.abspath(os.path.join(self.app_path_root, f"storage/data/{data_type}.yaml"))
+            filepath = os.path.abspath(os.path.join(self.app_path_data, f"{data_type}.yaml"))
             Path(filepath).parent.mkdir(parents=True, exist_ok=True)
             self.data_save(data_type=data_type, data_cont=data_cont)
         except Exception as e:
@@ -44,7 +45,7 @@ class FileDataUtils:
         - data_cont:  初始化的数据, 数据类型可以是 Dict / List
         """
         # 基于 data_type 来拼接文件的绝对路径
-        filepath = os.path.abspath(os.path.join(self.app_path_root, f"storage/data/{data_type}.yaml"))
+        filepath = os.path.abspath(os.path.join(self.app_path_data, f"{data_type}.yaml"))
         ###################################################
         # 如果 data_cont 为 None, 则初始化对应类型的空数据
         if data_cont is None:
@@ -82,7 +83,7 @@ class FileDataUtils:
             if self.app_data_dict[data_type] is not None:
                 return self.app_data_dict[data_type]
             # 从文件中读取
-            filepath = os.path.abspath(os.path.join(self.app_path_root, f"storage/data/{data_type}.yaml"))
+            filepath = os.path.abspath(os.path.join(self.app_path_data, f"{data_type}.yaml"))
             with open(filepath, "r", encoding="utf-8") as f:
                 self.app_data_dict[data_type] = yaml.safe_load(f)
                 return self.app_data_dict[data_type]

@@ -1,32 +1,56 @@
+import os
 import sys
 from pathlib import Path
-# 添加项目根目录到 Python 路径
-sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import flet as ft
 
-from src.endpoints import EndPoints
-from src.views.navigation_view import NavigationView
-from src.views.main_view import MainView
-from src.views.chat_view import ChatView
-from src.views.settings_view import SettingsView
-from src.components.chat_input import ChatInput
-from src.components.common import InputCommon
-from src.cores.lc_agents import LCAgents
-from src.utils.config import ConfigUtils, ProfileUtils
-from src.utils.cache import CacheUtils
-from src.utils.data import FileDataUtils
-from src.utils.i18n import LanguageUtils
-from src.utils.logging import logger
+# 导入说明: flet build 以 [tool.flet.app].path = "src" 把 src/ 目录作为应用根打包,
+# bundle 里 main.py 与 views/ components/ cores/ utils/ locales/ 同级、不存在 src 包,
+# 因此全项目统一使用裸模块导入 `from xxx import ...` (dev 下 flet run 也会把 src/ 放进 sys.path)
+from endpoints import EndPoints
+from views.navigation_view import NavigationView
+from views.main_view import MainView
+from views.chat_view import ChatView
+from views.settings_view import SettingsView
+from components.chat_input import ChatInput
+from components.common import InputCommon
+from cores.lc_agents import LCAgents
+from utils.config import ConfigUtils, ProfileUtils
+from utils.cache import CacheUtils
+from utils.data import FileDataUtils
+from utils.i18n import LanguageUtils
+from utils.logging import logger, setup_file_logging, install_exception_hooks
 
 # 记录软件运行时的根目录
-EndPoints.runtime["app_path_root"] = str(Path(__file__).resolve().parent.parent)
+# 注意: 语义已变更 —— 现在是 main.py 所在目录 (dev = <repo>/src, 打包后 = bundle 根),
+# 只用于定位 **只读资源** (如 locales/), 不再指向仓库根
+EndPoints.runtime["app_path_root"] = str(Path(__file__).resolve().parent)
+
+# 可写数据目录: 打包后的 bundle 应视为只读, 可写文件一律放 Flet 注入的存储目录
+# (flet run 与桌面端生产模式都会设置这两个环境变量, 前者指向 src/.flet/storage/*,
+#  后者指向系统应用支持目录)
+# 环境变量缺失时 (直接 python src/main.py 运行) 回退到仓库根 storage/*
+_path_root = Path(EndPoints.runtime["app_path_root"])
+EndPoints.runtime["app_path_data"] = os.environ.get("FLET_APP_STORAGE_DATA") or str(_path_root.parent / "storage" / "data")
+EndPoints.runtime["app_path_temp"] = os.environ.get("FLET_APP_STORAGE_TEMP") or str(_path_root.parent / "storage" / "temp")
+
+# 文件日志: 打包后 bundle 只读, 日志统一写可写数据目录 (<app_path_data>/logs/app.log)
+# -> 文件 sink 用 DEBUG (事后排查), stderr sink 仍为 TRACE (dev 终端)
+# -> 打包版 stderr 被 Flet 接到缓存目录的 console.log (下次启动覆盖 / 系统可能清理), 不适合查历史
+EndPoints.runtime["app_path_log"] = setup_file_logging(os.path.join(EndPoints.runtime["app_path_data"], "logs"))
+# 未捕获异常 (sys / threading) 同样落文件, 必须在 ft.run 之前挂好
+install_exception_hooks()
 
 def main(page: ft.Page):
     """
     Flet 主函数
     """
     logger.info(f"application starting...")
+    # 启动摘要: 打包版可从 console.log 反查真实的日志文件位置
+    logger.info(
+        f"runtime paths | python={sys.version.split()[0]} | root={EndPoints.runtime['app_path_root']} | "
+        f"data={EndPoints.runtime['app_path_data']} | log={EndPoints.runtime['app_path_log']}"
+    )
     # Page 对象
     EndPoints.root["page"] = page
     # 初始化工具组件

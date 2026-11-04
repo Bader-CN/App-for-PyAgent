@@ -1,12 +1,12 @@
 import uuid
 import flet as ft
-from src.endpoints import EndPoints
-from src.components.chat_header import ChatHeader
-from src.components.chat_body import ChatBody
-from src.components.common import MessageUtilsCommon
-from src.components.common import MessageBlockCommon
-from src.components.common import InputCommon
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.chat_header import ChatHeader
+from components.chat_body import ChatBody
+from components.common import MessageUtilsCommon
+from components.common import MessageBlockCommon
+from components.common import InputCommon
+from utils.logging import logger
 from langchain.messages import HumanMessage, AIMessage, ToolMessage
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import MessagesState

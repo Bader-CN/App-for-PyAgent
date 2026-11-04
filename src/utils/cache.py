@@ -4,8 +4,8 @@ import yaml
 import base64
 import mimetypes
 from pathlib import Path
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 from PIL import Image
 
 
@@ -14,15 +14,17 @@ class CacheUtils:
     缓存工具类
     """
     def __init__(self):
-        # App 运行时的根目录
-        self.app_path_root = EndPoints.runtime["app_path_root"]
+        # 可写数据目录 / 可写临时目录 (FLET_APP_STORAGE_*, 回退 <repo>/storage/*)
+        # 打包后 bundle 只读, 不能再基于 app_path_root 拼 storage/ 路径
+        self.app_path_data = EndPoints.runtime["app_path_data"]
+        self.app_path_temp = EndPoints.runtime["app_path_temp"]
 
         # tmp_msgs 字典 & 持久化文件
         self.tmp_msgs_state_dict = {}
-        self.tmp_msgs_state_file = os.path.abspath(os.path.join(self.app_path_root, "storage/data/tmp_msgs_state.yaml"))
+        self.tmp_msgs_state_file = os.path.abspath(os.path.join(self.app_path_data, "tmp_msgs_state.yaml"))
         
         # 剪切板临时目录
-        self.tmp_clipboard_dir = os.path.abspath(os.path.join(self.app_path_root, "storage/temp/clipboard"))
+        self.tmp_clipboard_dir = os.path.abspath(os.path.join(self.app_path_temp, "clipboard"))
 
         # 如果文件不存在, 则创建默认 tmp_msgs 文件
         if not Path(self.tmp_msgs_state_file).exists():
@@ -144,7 +146,8 @@ class CacheUtils:
 
     def clipboard_image_add(self, session_prefix: str, image_data):
         """
-        将截图数据保存在 /storage/temp/clipboard 文件夹里
+        将截图数据保存在 app_path_temp/clipboard 文件夹里
+        (FLET_APP_STORAGE_TEMP, 回退 <repo>/storage/temp)
 
         Args:
         - session_prefix (str): 会话前缀

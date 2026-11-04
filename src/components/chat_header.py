@@ -1,7 +1,7 @@
 import flet as ft
-from src.endpoints import EndPoints
-from src.components.common import MessageUtilsCommon
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.common import MessageUtilsCommon
+from utils.logging import logger
 
 
 class ChatHeader:

@@ -1,6 +1,6 @@
 import flet as ft
 
-from src.endpoints import EndPoints
+from endpoints import EndPoints
 
 
 class MainView:

@@ -8,9 +8,10 @@
 """
 import asyncio
 import copy
+import json
 import flet as ft
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 from langchain.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
 
@@ -107,7 +108,7 @@ class MessageUtilsCommon:
         return finish_aimsg_content
 
     @classmethod
-    def format_tool_msg_markdown(cls, tool_msg: ToolMessage) -> str:
+    def format_tool_msg_markdown(cls, tool_msg) -> str:
         """
         重新格式化 ToolMessage 里面的内容, 用于渲染 Markdown
 
@@ -118,14 +119,19 @@ class MessageUtilsCommon:
         2. 普通工具直接返回字符串
         3. 目前只支持 text 块; 图片 / 文件等后续再处理
            -> 不支持的块只在整条消息上汇总告警一次, 避免逐块刷屏
+        4. 入参不一定是 ToolMessage:
+           -> langgraph 1.2.14 的 ToolCallStream.output 是 ToolMessage
+           -> langgraph 1.2.19 起直接透传工具返回值 (本项目工具返回 str)
+           ∴ 有 .content 就用 .content, 否则把入参本身当内容, 两条路径都能渲染
 
         Args:
-        - tool_msg: 单条 ToolMessage
+        - tool_msg: ToolMessage / 工具返回值 (str) / 内容块列表
 
         Returns:
         - str: 格式化后的文本内容, 用于渲染 Markdown
         """
-        content = tool_msg.content
+        # ToolMessage -> 取 content; 其它类型 (str / list) -> 原样当内容
+        content = getattr(tool_msg, "content", tool_msg)
         # 不是列表: 原样输出 (普通工具直接返回字符串)
         if isinstance(content, str):
             return content
@@ -699,6 +705,16 @@ class MessageBlockCommon:
         Return:
         - Flet Container 控件对象
         """
+        # args 的形态不统一, 统一成字符串展示:
+        # -> 流式路径: 逐 chunk 拼接出的 JSON 文本 (可能尚未闭合)
+        # -> 读库路径: AIMessage.content 里的 tool_call 块, args 是已解析的 dict
+        args_raw = args_dict.get("args")
+        if isinstance(args_raw, str):
+            args_text = args_raw
+        elif args_raw is None:
+            args_text = ""
+        else:
+            args_text = json.dumps(args_raw, ensure_ascii=False)
         tool_call_blk = ft.Container(
             ft.ExpansionTile(
                 dense=True,
@@ -714,7 +730,7 @@ class MessageBlockCommon:
                 ),
                 tile_padding=ft.Padding.symmetric(vertical=0, horizontal=5),
                 subtitle=ft.Text(
-                    value=f"{args_dict.get("args")}", 
+                    value=args_text, 
                     font_family=EndPoints.runtime["app_util_profile"].font_family_text(),
                     size=11,
                     color=ft.Colors.GREY_600,

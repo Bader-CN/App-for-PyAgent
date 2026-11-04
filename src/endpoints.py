@@ -71,7 +71,18 @@ class EndPoints:
     # 运行时的全局变量
     runtime = {
         # 应用运行时的根目录
+        # 注意: 语义为 main.py 所在目录 (dev = <repo>/src, 打包后 = bundle 根),
+        # 只用于定位只读资源 (如 locales/); 可写文件走 app_path_data / app_path_temp
         "app_path_root": None,
+        # 可写数据目录 (config.yaml / profile.yaml / sort_*.yaml / tmp_msgs_state.yaml / checkpointer.db)
+        # 来自 FLET_APP_STORAGE_DATA, 缺失时回退 <repo>/storage/data, 初始化于 main.main()
+        "app_path_data": None,
+        # 可写临时目录 (剪切板截图等)
+        # 来自 FLET_APP_STORAGE_TEMP, 缺失时回退 <repo>/storage/temp, 初始化于 main.py 模块级
+        "app_path_temp": None,
+        # 日志文件的绝对路径 (<app_path_data>/logs/app.log), 初始化于 main.py 模块级
+        # 打包后 bundle 只读, 日志只能落在可写数据目录
+        "app_path_log": None,
         # 应用运行时的配置实例对象
         "app_util_conf": None,
         # 应用运行时的语言管理工具

@@ -1,10 +1,10 @@
 import asyncio
 import flet as ft
-from src.endpoints import EndPoints
-from src.components.chat_body import ChatBody
-from src.components.common import AlertCommon
-from src.components.common import MessageBlockCommon
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.chat_body import ChatBody
+from components.common import AlertCommon
+from components.common import MessageBlockCommon
+from utils.logging import logger
 
 
 class ChatInput:

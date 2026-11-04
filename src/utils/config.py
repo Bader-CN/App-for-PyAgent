@@ -2,8 +2,8 @@ import os
 import yaml
 from pathlib import Path
 from typing import Any, Dict, List
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 
 
 class ConfigUtils:
@@ -16,7 +16,9 @@ class ConfigUtils:
 
         # App 配置字典 & 文件路径
         self.app_conf_dict = None
-        self.app_conf_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/config.yaml"))
+        # config.yaml 是可写数据: 打包后 bundle 只读, 统一放 app_path_data
+        # (FLET_APP_STORAGE_DATA, 回退 <repo>/storage/data)
+        self.app_conf_file = os.path.abspath(os.path.join(EndPoints.runtime["app_path_data"], "config.yaml"))
         
         # App 默认设置参数
         self.api_url = "http://<api_base_url>:<port>/v1"
@@ -347,7 +349,9 @@ class ProfileUtils:
 
         # User 配置字典 & 文件路径
         self.app_user_dict = None
-        self.app_user_file = os.path.abspath(os.path.join(self.app_path_root, "storage/conf/profile.yaml"))
+        # profile.yaml 是可写数据: 打包后 bundle 只读, 统一放 app_path_data
+        # (FLET_APP_STORAGE_DATA, 回退 <repo>/storage/data)
+        self.app_user_file = os.path.abspath(os.path.join(EndPoints.runtime["app_path_data"], "profile.yaml"))
 
         # 如果文件不存在, 则创建默认配置
         if not Path(self.app_user_file).exists():
@@ -515,7 +519,8 @@ class ProfileUtils:
         - List[str]: 可用的语言列表
         """
         try:
-            lang_path = Path(os.path.abspath(os.path.join(self.app_path_root, "src/locales")))
+            # locales 是只读资源, 随 bundle 打包在 app_path_root (bundle 根 / src/) 下
+            lang_path = Path(os.path.abspath(os.path.join(self.app_path_root, "locales")))
             all_langs = lang_path.glob("*.yaml")
             # https://docs.python.org/zh-cn/3/library/pathlib.html#pathlib.PurePath.stem
             # 最后一个路径组件, 除去后缀

@@ -1,8 +1,8 @@
 import flet as ft
 
-from src.endpoints import EndPoints
-from src.components.chat_list import ChatList
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.chat_list import ChatList
+from utils.logging import logger
 
 
 class NavigationView:

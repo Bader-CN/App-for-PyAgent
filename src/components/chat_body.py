@@ -3,11 +3,11 @@ import uuid
 import asyncio
 import flet as ft
 from typing import Dict
-from src.endpoints import EndPoints
-from src.components.common import AlertCommon
-from src.components.common import MessageUtilsCommon
-from src.components.common import MessageBlockCommon
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.common import AlertCommon
+from components.common import MessageUtilsCommon
+from components.common import MessageBlockCommon
+from utils.logging import logger
 from langchain.messages import HumanMessage, AIMessage, RemoveMessage
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
@@ -68,10 +68,15 @@ class ChatBody:
                 # -> 中止点可能落在参数生成的中途 -> 拼接结果不是合法 JSON
                 # -> 此时原样保留字符串
                 raw_args = msg.get("args") or ""
-                try:
-                    args_parsed = json.loads(raw_args) if raw_args else {}
-                except json.JSONDecodeError:
+                # args 可能是 dict (旧版本 langchain 直接给出已解析结果) 或 str (增量拼接的 JSON 文本)
+                # -> json.loads 只接受 str, 先分流, 避免 TypeError 被外层 except 吞掉
+                if isinstance(raw_args, dict):
                     args_parsed = raw_args
+                else:
+                    try:
+                        args_parsed = json.loads(raw_args) if raw_args else {}
+                    except json.JSONDecodeError:
+                        args_parsed = raw_args
                 content.append({
                     "type": "tool_call",
                     "id": msg.get("tool_call_id"),
@@ -413,10 +418,13 @@ class ChatBody:
                 is_current = chat_session_id == EndPoints.runtime["session_id_chat_current"]
                 is_synced = EndPoints.tmp_msgs[chat_session_id]["rendered_click_count"] == EndPoints.tmp_msgs[chat_session_id]["click_count"]
 
-                # 获取 Tool Call 的结果, tool_out 可以获取如下信息:
-                # -> logger.debug(tool_out.content)
-                # -> logger.debug(tool_out.name)
-                # -> logger.debug(tool_out.tool_call_id)
+                # 获取 Tool Call 的结果
+                # -> call 是 langgraph 的 ToolCallStream, 稳定字段: tool_call_id / tool_name / input / output / error
+                # -> output 的类型随 langgraph 版本变化:
+                #    1.2.14 -> ToolMessage (有 .tool_call_id / .content)
+                #    1.2.19 -> 直接是工具返回值 (本项目工具返回 str)
+                #    ∴ 匹配块必须用 call.tool_call_id, 绝不能读 output.tool_call_id
+                #      (打包版报 'str' object has no attribute 'tool_call_id' 就是这个原因)
                 tool_out = call.output
                 tool_err = call.error
 
@@ -426,7 +434,6 @@ class ChatBody:
 
                 # 工具还没结束就被中止: abort() 的 aclose 路径不设 error, 投影以 StopAsyncIteration 正常收尾
                 # -> call.output 恒为 None, 没有可回填的结果, 直接跳过
-                # -> 否则下面 tool_out.tool_call_id 会抛 AttributeError
                 elif tool_out is None:
                     continue
 
@@ -434,7 +441,7 @@ class ChatBody:
                 else:
                     for idx, msg in enumerate(reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]), start=1):
                         # 更新数据
-                        if msg["type"] == "tool_call" and msg["tool_call_id"] == tool_out.tool_call_id:
+                        if msg["type"] == "tool_call" and msg["tool_call_id"] == call.tool_call_id:
                             tool_markdown = MessageUtilsCommon.format_tool_msg_markdown(tool_msg=tool_out)
                             msg["tool_result"] = tool_markdown
                             # 渲染界面 (面板尾部就是本轮的块)
@@ -504,8 +511,25 @@ class ChatBody:
                 for idx, msg in enumerate(reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]), start=1):
                     if msg["type"] == "tool_call" and msg["tool_call_id"] == chunk.get("id"):
                         for k, v in chunk.items():
-                            if k != "type":
-                                tgt_tool_msg[k] = v
+                            if k == "type":
+                                continue
+                            # args 的形态随 langchain 版本变化 (已踩):
+                            # -> 1.6.9: message.tool_calls 给出的是**已解析的 dict** (累计到当前 chunk 的部分 JSON)
+                            # -> 1.7.x: 给出的是本 chunk 的**增量片段** (str)
+                            # ∴ 直接赋值会把前面积累的参数丢掉, 界面上只剩最后一个片段 (例如 "}")
+                            # -> str 一律拼接; dict 视为「当前完整快照」, 序列化后覆盖
+                            # -> 统一存成字符串 (JSON 文本), 与 msg_aborted_save / 历史渲染的预期一致
+                            if k == "args":
+                                if isinstance(v, str):
+                                    prev_args = tgt_tool_msg.get("args")
+                                    tgt_tool_msg["args"] = (prev_args if isinstance(prev_args, str) else "") + v
+                                elif v is not None:
+                                    tgt_tool_msg["args"] = json.dumps(v, ensure_ascii=False)
+                                continue
+                            # name / id 在后续 chunk 里可能是 None, 不要覆盖首次拿到的值
+                            if v is None:
+                                continue
+                            tgt_tool_msg[k] = v
                         # 渲染界面 (非切换重建)
                         if is_current and is_synced:
                             EndPoints.chat["chat_body"].current.content.controls[-idx] = MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)

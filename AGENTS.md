@@ -19,9 +19,9 @@ flet run -r src/main.py      # dev, 热重载（从仓库根目录运行）
 flet run src/main.py         # 演示
 ```
 
-- 入口 `src/main.py` → `ft.run(main)`；启动时把仓库根加入 `sys.path`，所有模块用绝对导入 `from src.xxx import ...`。
-- `pyproject.toml` 是依赖与 Flet 配置的唯一来源：`[tool.flet.app] path = "src"` 指定应用目录，构建产物 `.flet/` 生成在 `src/` 下。
-- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["."]`（绝对导入要求仓库根在 `sys.path`），`asyncio_mode = "auto"`。当前 14 项全部通过。
+- 入口 `src/main.py` → `ft.run(main)`；所有模块用**裸模块绝对导入** `from xxx import ...`（`endpoints` / `views.x` / `utils.x` 等）。原因：`flet build` 打包时 `src/` 就是应用根，bundle 里 `main.py` 与 `views/ components/ cores/ utils/ locales/` 同级，**不存在 `src` 包**。
+- `pyproject.toml` 是依赖与 Flet 配置的唯一来源：`[tool.flet.app] path = "src"` 指定应用目录（bundle 根 = `src/` 内容），dev 状态目录 `.flet/` 也生成在 `src/` 下。
+- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 14 项全部通过。
 - **`tests/` 被 `.gitignore` 忽略**（与 `storage/` 一样），不受版本控制。
 - **LangChain OpenAI 的 `reasoning_content` 支持已内置于仓库**（`src/cores/lc_hotfix_openai.py`），无需再改 site-packages；README 里的手工 patch 是等价说明（README 的运行路径仍写作 `main.py`，已过时）。
 
@@ -56,7 +56,7 @@ flet run src/main.py         # 演示
 | `settings` | `switch_language` / `default_chat_model` / `default_agent_model` / `default_summary_model` / `default_translation_model` | 设置页显示值的控件 ref |
 | `settings` | `providers_list` / `provider_models` / `provider_api_type` / `provider_del_btn` | 模型服务页内部控件 |
 | `views` | `main_view` / `chat_view` / `navigation_view` / `settings_view` | **View 实例**，可调 `.render_full()` |
-| `runtime` | `app_path_root` / `app_util_conf` / `app_util_cache` / `app_util_profile` / `app_util_filedata` / `app_util_lang` | 初始化于 `main.main()` |
+| `runtime` | `app_path_root` / `app_path_data` / `app_path_temp` / `app_util_conf` / `app_util_cache` / `app_util_profile` / `app_util_filedata` / `app_util_lang` | 初始化于 `main.main()`。`app_path_root` = `main.py` 所在目录（dev 为 `src/`，打包后为 bundle 根），**只用于只读资源**（`locales/`）；可写文件一律走 `app_path_data` / `app_path_temp`（= `FLET_APP_STORAGE_DATA` / `FLET_APP_STORAGE_TEMP`，环境变量缺失时回退 `<repo>/storage/data|temp`，覆盖直接 `python src/main.py` 的场景） |
 | `runtime` | `app_language` / `llm_protocol` / `last_provider_name` / `lc_agents` | 运行期可变状态 |
 | `runtime` | `session_id_chat_current` / `session_id_chat_last` / `session_id_agent_current` / `session_id_agent_last` | 会话互斥标记 |
 | `tmp_msgs` | 普通 dict（不是 `ft.Ref`） | key 为 `session_id`，见下方结构 |
@@ -185,16 +185,16 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 - 遍历范围仍只到 Lv2 为止：Lv3（模型服务详情）与其他组件（chat 头 / 输入面板）**不会自动刷新**；要么重新渲染，要么重启。
 - 设置 Lv2 的“默认模型”板块目前未挂 `i18n_key`，切换语言不会刷新，需要补 `data={"i18n_key": ...}`。
 - 整个过程包在 `try/except` 中只打 `logger.warning`，新增控件漏挂 `i18n_key` 不会报错，只会保持旧语言。
-- 翻译 key 为**扁平 key-value**，文件在 `src/locales/{lang}.yaml`（`en`、`zh_cn`）；`LanguageUtils.translate` 缺失时返回 `??key??`。
+- 翻译 key 为**扁平 key-value**，文件在 `src/locales/{lang}.yaml`（`en`、`zh_cn`；运行时按 `app_path_root/locales/` 定位，随 bundle 打包）；`LanguageUtils.translate` 缺失时返回 `??key??`；语言文件**加载失败**时（`app_language_dict is None`）同样返回 `??key??`，不再抛 `AttributeError`。
 
 ## 对话数据流（chat）
 
 ### 持久化与读历史
 
-- **checkpointer**：`LCAgents.__init__` 创建 `AsyncSqliteSaver(conn=aiosqlite.connect("storage/data/checkpointer.db"))`；连接是惰性的，删除前必须 `await setup()`。
+- **checkpointer**：`LCAgents.__init__` 创建 `AsyncSqliteSaver`，db 文件为 `app_path_data/checkpointer.db`；连接是惰性的，删除前必须 `await setup()`。
 - **读历史**：用「空壳只读图」`LCAgents.state_graph_chat`（`MessagesState` + 一个 `noop` 节点）`await graph.aget_state(cfg)`，消息在 `.values["messages"]`。状态 schema 必须与写入方一致（`create_agent` → `MessagesState`；`create_deep_agent` → `DeepAgentState`）。`state_graph_agent_update` 目前是空实现。
-- **会话元数据**：顺序与标题存 `storage/data/sort_chat.yaml`（经 `FileDataUtils`，`data_type="sort_chat"`）。
-- **状态镜像**：`storage/data/tmp_msgs_state.yaml` 存 `status` / `reason` / `detail`，启动时由 `CacheUtils.tmp_msgs_state_sync` 镜像进 `EndPoints.tmp_msgs`。
+- **会话元数据**：顺序与标题存 `app_path_data/sort_chat.yaml`（经 `FileDataUtils`，`data_type="sort_chat"`）。
+- **状态镜像**：`app_path_data/tmp_msgs_state.yaml` 存 `status` / `reason` / `detail`，启动时由 `CacheUtils.tmp_msgs_state_sync` 镜像进 `EndPoints.tmp_msgs`。
 
 ### 发送与流式消费（`ChatBody.msg_update_stream`）
 
@@ -326,21 +326,22 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 
 | 工具 | 文件 | 职责 |
 |---|---|---|
-| `ConfigUtils` | `config.py` | 读写 `storage/conf/config.yaml`：模型服务商（`model_providers`）及其模型 |
-| `ProfileUtils` | `config.py` | 读写 `storage/conf/profile.yaml`：语言、默认模型、思考强度、`chat_view` 宽度等用户偏好 |
-| `CacheUtils` | `cache.py` | `tmp_msgs` 初始化/删除、`tmp_msgs_state.yaml` 镜像（`status` / `reason` / `detail`）、剪切板截图（`storage/temp/clipboard/`） |
-| `FileDataUtils` | `data.py` | 读写 `storage/data/{sort_chat,sort_agent}.yaml`（会话顺序/标题），带内存缓存 |
+| `ConfigUtils` | `config.py` | 读写 `app_path_data/config.yaml`：模型服务商（`model_providers`）及其模型 |
+| `ProfileUtils` | `config.py` | 读写 `app_path_data/profile.yaml`：语言、默认模型、思考强度、`chat_view` 宽度等用户偏好 |
+| `CacheUtils` | `cache.py` | `tmp_msgs` 初始化/删除、`app_path_data/tmp_msgs_state.yaml` 镜像（`status` / `reason` / `detail`）、剪切板截图（`app_path_temp/clipboard/`） |
+| `FileDataUtils` | `data.py` | 读写 `app_path_data/{sort_chat,sort_agent}.yaml`（会话顺序/标题），带内存缓存 |
 | `LanguageUtils` | `i18n.py` | 从 `src/locales/{lang}.yaml` 加载扁平 key-value 翻译 |
-| loguru | `logging.py` | 输出到 stderr，级别 `TRACE` |
+| loguru | `logging.py` | 双 sink：stderr `TRACE` + `app_path_data/logs/app.log` `DEBUG`（`10 MB` 轮转、保留 10 份历史、UTF-8、`diagnose=False`）；`setup_file_logging` / `install_exception_hooks` 于 `main.py` 模块级接线 |
 
 - `ConfigUtils`：`models_list_enable()` 返回 `["<provider>/<model_name>", ...]`（只含已启用 provider）；`providers_dict()` 返回**内部字典引用**（原地修改才会写回）；`provider_api_url/key/type` 读写单个字段，`provider_models_add/edit/del` 维护模型列表。
 - `ProfileUtils`：`default_model(type)` 在 provider 被禁用时返回 `None`；`language()` 会同步 `EndPoints.runtime["app_language"]`；`language_set()` 同时重载 `LanguageUtils`。
 - `CacheUtils`：截图文件名 `<session_prefix>_screenshot_<n>.png`，按前缀隔离；`tmp_msgs_del` 只在 `status` 为 `None/stop/error` 时真正删除（`aborted` 会保留缓存）。
 - `FileDataUtils`：`data_read` 首次读文件后缓存在 `app_data_dict`，文件不存在时自动 `data_init` 建空列表。
+- `logging.py`：**日志不能写在 exe 旁边**（bundle 只读）。文件 sink 落 `EndPoints.runtime["app_path_log"]` = `<app_path_data>/logs/app.log`，路径在 `main()` 启动摘要里打印。打包版的 stderr 被 Flet 接到 `getApplicationCacheDirectory()/console.log`（`build/flutter/lib/main.dart`），**下次启动会覆盖、系统也可能清理**，只适合即时排查，不要用它查历史。`diagnose=False` 刻意关闭：开启会把局部变量（含 api_key / 请求头）写进日志。
 
 ### 配置文件形状
 
-`storage/conf/config.yaml`：
+`app_path_data/config.yaml`（dev 回退时为 `storage/conf/config.yaml`）：
 
 ```yaml
 general_settings:
@@ -357,7 +358,7 @@ model_providers:
         model_feats: {vision: true, embed: false, reranker: false}
 ```
 
-`storage/conf/profile.yaml`：
+`app_path_data/profile.yaml`（dev 回退时为 `storage/conf/profile.yaml`）：
 
 ```yaml
 general_settings: {language: zh_cn}
@@ -501,6 +502,8 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 - **发送侧 Patch ② 已无需再做**：`langchain_openai` 的 `_get_request_payload` 会在出站时剔除 `reasoning` / `tool_call` / `invalid_tool_call` 块。
 - **必须带 `index: 0`**，否则长思考会在 checkpointer 里堆积多个 reasoning 块。
 - **同 delta 带 `tool_calls` 时跳过改写**，否则工具增量会从 v3 事件流消失。
+- **`astream.tool_calls` 的 `output` 类型随 langgraph 版本漂移**（已踩）：`call` 是 `ToolCallStream`，字段 `tool_call_id` / `tool_name` / `input` / `output` / `error` 稳定；但 `output` 在 1.2.14 是 `ToolMessage`，1.2.19 直接是**工具返回值**（本项目工具返回 `str`）。∴ 回填时匹配块一律用 `call.tool_call_id`，**不要读 `output.tool_call_id`**；`format_tool_msg_markdown` 已改为 `getattr(tool_msg, "content", tool_msg)` 兼容两种形态。
+- **`message.tool_calls` 的 `args` 也随版本漂移**（已踩）：1.6.9 给**已解析的 dict**（累计快照），1.7.x 给**本 chunk 的增量字符串片段**。∴ 直接 `tgt[k] = v` 赋值会把前面的参数丢掉，界面上只剩最后一个片段（典型症状：参数只显示 `}`）。`consume_tool_calls_args` 已改为：`str` 一律拼接、dict 序列化后覆盖，统一用 JSON 文本存在 `aimsgs[*]["args"]`（`msg_aborted_save` / `build_blk_ai_tool_call` 都按这个口径取）。`name` / `id` 在后续 chunk 里可能是 `None`，不要覆盖首次拿到的值。
 - 已知遗留：content 变为 list 后，后续纯文本 delta 可能以裸字符串 append，应用侧读回时由 `MessageUtilsCommon.format_ai_msg_content` 归一化。
 - **v1 content block**：`reasoning` / `text` / `tool_call` 是当前读写的统一形状；写入中止消息时显式带 `response_metadata.output_version="v1"`，避免再次按 provider 规则翻译。
 - **`aupdate_state` 必须显式 `as_node="model"`**：checkpoint 的 `versions_seen` 可能同时有 model / tools，LangGraph 推断会抛 `InvalidUpdateError: Ambiguous update`。
@@ -522,9 +525,9 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 | `src/locales/*.yaml` | 扁平 key-value 翻译文件（en, zh_cn） |
 | `src/assets/` | 各平台应用图标 `icon.png`，由 `[tool.flet]` 打包使用 |
 | `tests/` | `test_lc_hotfix_openai.py`（纯离线，14 项）；**被 .gitignore 忽略** |
-| `storage/conf/` | `config.yaml`（模型服务）、`profile.yaml`（用户偏好），运行时自动生成 |
-| `storage/data/` | `sort_chat.yaml` / `sort_agent.yaml`（预留给 agent）/ `tmp_msgs_state.yaml` / `checkpointer.db` |
-| `storage/temp/` | `clipboard/` 剪切板截图临时文件 |
+| `storage/conf/` | **回退位置**：`FLET_APP_STORAGE_DATA` 缺失时 config.yaml / profile.yaml 落这里；正常 dev（`flet run`）数据在 `src/.flet/storage/data/`，运行时自动生成 |
+| `storage/data/` | **回退位置**：`sort_chat.yaml` / `sort_agent.yaml`（预留给 agent）/ `tmp_msgs_state.yaml` / `checkpointer.db` |
+| `storage/temp/` | **回退位置**：`clipboard/` 剪切板截图临时文件（正常 dev 走 `src/.flet/storage/temp/`） |
 
 ## 依赖
 
@@ -542,6 +545,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 - `msg_update_stream` 正常结束分支直接取 `aimsgs[-1]`；模型没有产出任何块时会 `IndexError`。
 - `MessageUtilsCommon.msg_title_summary_chat` 要求 `last_user_msg` / `last_ai_msg` 同时存在，缺失时已改为 `logger.warning` + `return`（不再走 `UnboundLocalError` 被吞的旧路径）。防重入标记位 `EndPoints.tmp_title_summarizing` 的形状是**守卫/置位在 `try` 之外 + `finally` 复位**：守卫的 `return` 绝不能经过 `finally`（会清掉正在进行那一轮的标记位 → 并发重复总结），复位用 `pop(..., None)`。模型调用经 `asyncio.to_thread` 执行，之后的界面渲染留在主线程。且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。
 - `ProfileUtils.default_model` 对已删除的 provider 会 `AttributeError`（配置异常未做防御，符合当前策略）。
+- **打包版工具调用报 `'str' object has no attribute 'tool_call_id'`**（已修复：`tool_out.tool_call_id` → `call.tool_call_id`，见「LangChain 注意事项」）：根因是编译版跑的 langgraph 1.2.19 把 `ToolCallStream.output` 换成裸返回值。`.venv`（langchain_core 1.6.9 / langchain 1.4.4 / langgraph 1.2.14）与 `build/site-packages`（langchain_core 1.7.4 / langchain 1.4.8 / langgraph 1.2.19）仍不一致，dev 复现不了此类问题，需要注意。
 - README 的运行路径与手工 patch 说明已过时，以本文件 + `src/cores/lc_hotfix_openai.py` 为准。
 
 ## 杂项

@@ -38,6 +38,7 @@ flet run main.py
     # PowerShell
     $env:HTTP_PROXY="http://<server>:<port>"
     $env:HTTPS_PROXY="http://<server>:<port>"
+    $env:NO_PROXY="localhost,127.0.0.1"
     ```
 2. LangChain 的 OpenAI 不支持 [Non-standard response fields (reasoning_content, reasoning, reasoning_details)](https://docs.langchain.com/oss/python/integrations/chat/openai)
     - 官方结论<br>

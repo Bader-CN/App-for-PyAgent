@@ -11,10 +11,10 @@ from langchain.agents import create_agent
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 
-from src.endpoints import EndPoints
-from src.cores.lc_tools import LC_Tools
-from src.cores.lc_hotfix_openai import HotfixChatOpenAI
-from src.utils.logging import logger
+from endpoints import EndPoints
+from cores.lc_tools import LC_Tools
+from cores.lc_hotfix_openai import HotfixChatOpenAI
+from utils.logging import logger
 
 
 class LCAgents:
@@ -23,11 +23,12 @@ class LCAgents:
     包含多个智能体, 用于不同场景
     """
     def __init__(self):
-        # App 运行时的根目录
-        self.app_path_root = EndPoints.runtime["app_path_root"]
+        # 可写数据目录 (FLET_APP_STORAGE_DATA, 回退 <repo>/storage/data)
+        # 打包后 bundle 只读, checkpointer.db 这类可写文件不能再基于 app_path_root 拼路径
+        self.app_path_data = EndPoints.runtime["app_path_data"]
         # checkpointer 对象
         self.checkpointer = AsyncSqliteSaver(
-            conn=aiosqlite.connect(os.path.abspath(os.path.join(self.app_path_root, "storage/data/checkpointer.db")))
+            conn=aiosqlite.connect(os.path.abspath(os.path.join(self.app_path_data, "checkpointer.db")))
         )
 
         # 智能体实例

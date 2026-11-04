@@ -3,8 +3,8 @@ import re
 from urllib.parse import urlparse
 
 import flet as ft
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 
 # 等宽字体: 代码块 / 需要对齐的场景
 # 注意: FONT_ALL 引用本常量, 因此定义顺序必须在 FONT_ALL 之前

@@ -39,8 +39,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-# 项目内部使用绝对导入 `from src.xxx import ...`，因此需把仓库根目录加入 sys.path
-pythonpath = ["."]
+# 项目内部使用裸模块绝对导入 `from xxx import ...`（与 flet build 打包后的 bundle 布局一致，
+# [tool.flet.app].path = "src" 使 src/ 目录就是应用根），因此需把 src 目录加入 sys.path
+pythonpath = ["src"]
 
 [tool.flet]
 org = "com.mycompany"

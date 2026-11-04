@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 from bs4 import BeautifulSoup
 from langchain.tools import tool
 
-from src.endpoints import EndPoints
-from src.utils.logging import logger
+from endpoints import EndPoints
+from utils.logging import logger
 
 
 class LC_Tools:

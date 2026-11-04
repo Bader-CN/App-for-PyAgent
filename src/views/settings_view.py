@@ -1,10 +1,10 @@
 import flet as ft
 
-from src.endpoints import EndPoints
-from src.components.settings_general import SettingsGeneral
-from src.components.settings_default_models import SettingsDefaultModels
-from src.components.settings_model_services import SettingsModelServices
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.settings_general import SettingsGeneral
+from components.settings_default_models import SettingsDefaultModels
+from components.settings_model_services import SettingsModelServices
+from utils.logging import logger
 
 
 class SettingsView:

@@ -1,10 +1,10 @@
 import flet as ft
 
-from src.endpoints import EndPoints
-from src.components.chat_list import ChatList
-from src.components.chat_input import ChatInput
-from src.components.common import InputCommon
-from src.utils.logging import logger
+from endpoints import EndPoints
+from components.chat_list import ChatList
+from components.chat_input import ChatInput
+from components.common import InputCommon
+from utils.logging import logger
 
 
 class ChatView:
