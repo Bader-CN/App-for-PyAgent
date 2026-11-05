@@ -9,6 +9,7 @@
 import asyncio
 import copy
 import json
+import re
 import flet as ft
 from endpoints import EndPoints
 from utils.logging import logger
@@ -207,6 +208,41 @@ class MessageUtilsCommon:
             # 其余行: 行尾补两个空格, 使其成为 Markdown 硬换行
             finish_lines.append(line + "  ")
         return "\n".join(finish_lines)
+
+    @classmethod
+    def format_tool_call_args_preview(cls, raw_args, max_chars: int = 200) -> str:
+        """
+        把 Tool Call 的参数压成「单行短预览」, 用于 ExpansionTile 的副标题
+
+        Note:
+        - 副标题在流式期间每个 chunk 都要刷新, 文本长度直接决定布局重排的代价
+        - 完整参数仍保存在 EndPoints.tmp_msgs / checkpointer, 预览只影响界面
+        - 换行/连续空白必须折叠: 副标题是多行参数时会把工具块撑得很高, 且每次都重排
+        - 超长时保留**头部**: JSON / 参数源码的开头信息量最高
+          (尾部常是某些网关重复下发完整快照留下的残片)
+
+        Args:
+        - raw_args:   args 的任意形态 (拼接中的 JSON 文本 / 已解析的 dict / None)
+        - max_chars:  预览的最大字符数
+
+        Return:
+        - str: 单行预览文本, 超长时以 " …" 结尾
+        """
+        if raw_args is None:
+            return ""
+        # 归一化: str 直接用, dict 等序列化后再处理
+        if isinstance(raw_args, str):
+            text = raw_args
+        else:
+            try:
+                text = json.dumps(raw_args, ensure_ascii=False)
+            except (TypeError, ValueError):
+                text = str(raw_args)
+        # 折叠所有空白 (含换行): 保证副标题只占 1~2 行
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > max_chars:
+            return text[:max_chars] + " …"
+        return text
 
     @classmethod
     def format_markdown_style_code(cls):
@@ -520,6 +556,15 @@ class MessageBlockCommon:
                         # https://flet.dev/docs/controls/image#flet.Image.fit
                         # https://flet.dev/docs/types/boxfit/
                         fit=ft.BoxFit.SCALE_DOWN,
+                        # 必须开启: 图片源是 base64, Dart 侧每次 build 都会 base64.decode 出新的 Uint8List
+                        # -> MemoryImage 的 key 按 bytes 身份比较 => 每次 build 都是新 provider
+                        # -> Flutter 的 Image 在 provider 变化且 gapless_playback=False 时
+                        #    会先把 _imageInfo 置空 => 出现一帧空白 (肉眼看就是"闪一下")
+                        # -> gapless_playback=True 会保留上一帧直到新图解码完成, 白闪消失
+                        # 前提: 消息列表的任何结构性变化 (append / insert / remove / 替换列表项)
+                        # 都会 notify 拥有 controls 的 Column => 整列重建 => 所有 Image 重新 build
+                        # 所以这不是可选优化, 而是 base64 图片在这个结构下的必需配置
+                        gapless_playback=True,
                     )
                 )
             column_controls.append(user_msg_images)
@@ -705,16 +750,11 @@ class MessageBlockCommon:
         Return:
         - Flet Container 控件对象
         """
-        # args 的形态不统一, 统一成字符串展示:
-        # -> 流式路径: 逐 chunk 拼接出的 JSON 文本 (可能尚未闭合)
-        # -> 读库路径: AIMessage.content 里的 tool_call 块, args 是已解析的 dict
-        args_raw = args_dict.get("args")
-        if isinstance(args_raw, str):
-            args_text = args_raw
-        elif args_raw is None:
-            args_text = ""
-        else:
-            args_text = json.dumps(args_raw, ensure_ascii=False)
+        # args 的形态不统一 (流式拼接中的 JSON 文本 / 读库时已解析的 dict),
+        # 统一交给 format_tool_call_args_preview 归一化 + 折叠空白 + 截断
+        # -> 流式期间本块**不再重建**, 只原地改写 subtitle 的 value
+        #   (见 chat_body.consume_tool_calls_args), 故这里的样式必须与原地更新保持一致
+        args_text = MessageUtilsCommon.format_tool_call_args_preview(args_dict.get("args"))
         tool_call_blk = ft.Container(
             ft.ExpansionTile(
                 dense=True,
@@ -734,6 +774,12 @@ class MessageBlockCommon:
                     font_family=EndPoints.runtime["app_util_profile"].font_family_text(),
                     size=11,
                     color=ft.Colors.GREY_600,
+                    # 固定单行 + 省略号: 流式期间参数逐 chunk 变长
+                    # -> 不封顶的话 subtitle 高度持续变化 -> ExpansionTile 尺寸跟着变
+                    # -> 整个 chat_body 的 Column 重排 + auto_scroll 跳底 -> 视觉抖动
+                    # -> 封成单行后高度恒定, 刷新只重绘这一个 Text
+                    max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS,
                 ),
                 # ExpansionTile 控件可以通过这种方式来自己绘制边框
                 # 展开时: https://flet.dev/docs/controls/expansiontile#flet.ExpansionTile.shape

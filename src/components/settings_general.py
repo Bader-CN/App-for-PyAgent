@@ -9,20 +9,20 @@ from utils.logging import logger
 # 等宽字体: 代码块 / 需要对齐的场景
 # 注意: FONT_ALL 引用本常量, 因此定义顺序必须在 FONT_ALL 之前
 FONT_MONO = [
-    "Consolas",         # Windows 英文等宽首选
-    "Cascadia Mono",    # Win11 / Windows Terminal 自带
-    "Courier New",      # 各平台通用兜底
-    "Lucida Console",   # Windows 老牌等宽
-    "Monaco",           # macOS 等宽
-    "MS Gothic",        # 日文等宽 (Windows 自带)
+    "Consolas",             # Windows 英文等宽首选
+    "Cascadia Mono",        # Win11 / Windows Terminal 自带
+    "Courier New",          # 各平台通用兜底
+    "Lucida Console",       # Windows 老牌等宽
+    "Monaco",               # macOS 等宽
+    "MS Gothic",            # 日文等宽 (Windows 自带)
 ]
 # 全部字体: 中 / 英 / 日 常用比例字体 + 等宽字体 (等宽排在后面)
 FONT_ALL = [
-    "Microsoft YaHei",  # 中文: 微软雅黑
-    "Segoe UI",         # 英文: Windows 系统 UI 字体
-    "Arial",            # 英文: 通用无衬线
-    "Meiryo",           # 日文: メイリオ
-    *FONT_MONO,         # 等宽字体纳入可选范围, 排在比例字体之后
+    "Microsoft YaHei UI",   # 中文: 微软雅黑
+    "Segoe UI",             # 英文: Windows 系统 UI 字体
+    "Arial",                # 英文: 通用无衬线
+    "Meiryo",               # 日文: メイリオ
+    *FONT_MONO,             # 等宽字体纳入可选范围, 排在比例字体之后
 ]
 
 

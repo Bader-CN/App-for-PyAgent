@@ -496,6 +496,10 @@ class ChatBody:
                 # 每个 tool_call 只建立一个 tgt_tool_msg
                 # 基于 tool_call_id 来进行唯一标识, tgt_tool_msg 默认为 None
                 tgt_tool_msg = None
+                # 首次创建时的界面块 (仅本次回调内有效, 避免重复从 controls 里取)
+                tgt_blk = None
+                # 本次回调是否新建了块 (决定尾部用整页刷新还是块级刷新)
+                blk_created = False
                 for msg in reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]):
                     if msg["type"] == "tool_call" and msg["tool_call_id"] == chunk.get("id"):
                         tgt_tool_msg = msg
@@ -506,7 +510,11 @@ class ChatBody:
                     EndPoints.tmp_msgs[chat_session_id]["aimsgs"].append(tgt_tool_msg)
                     # 渲染界面 (非切换重建)
                     if is_current and is_synced:
-                        EndPoints.chat["chat_body"].current.content.controls.append(MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id))
+                        tgt_blk = MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
+                        EndPoints.chat["chat_body"].current.content.controls.append(tgt_blk)
+                        # 本次新建的块此刻还没挂到控件树上 (_parent 由首次 patch_control 才设置)
+                        # -> 尾部必须整页刷新, 块级 update 会因为找不到 page 抛 RuntimeError
+                        blk_created = True
                 # 基于 chunk.get("id") 来更新 数据 / Flet 控件
                 for idx, msg in enumerate(reversed(EndPoints.tmp_msgs[chat_session_id]["aimsgs"]), start=1):
                     if msg["type"] == "tool_call" and msg["tool_call_id"] == chunk.get("id"):
@@ -517,12 +525,17 @@ class ChatBody:
                             # -> 1.6.9: message.tool_calls 给出的是**已解析的 dict** (累计到当前 chunk 的部分 JSON)
                             # -> 1.7.x: 给出的是本 chunk 的**增量片段** (str)
                             # ∴ 直接赋值会把前面积累的参数丢掉, 界面上只剩最后一个片段 (例如 "}")
-                            # -> str 一律拼接; dict 视为「当前完整快照」, 序列化后覆盖
+                            # -> str 默认拼接; dict 视为「当前完整快照」, 序列化后覆盖
                             # -> 统一存成字符串 (JSON 文本), 与 msg_aborted_save / 历史渲染的预期一致
                             if k == "args":
                                 if isinstance(v, str):
                                     prev_args = tgt_tool_msg.get("args")
-                                    tgt_tool_msg["args"] = (prev_args if isinstance(prev_args, str) else "") + v
+                                    prev_args = prev_args if isinstance(prev_args, str) else ""
+                                    # 部分网关/端点不是增量下发, 而是每个 delta 重复下发**完整快照**
+                                    # -> 此时 prev + v 会平方级膨胀, 界面上同一段 JSON 被反复累积
+                                    # -> 新片段以旧内容开头 => 判定为快照, 整体覆盖
+                                    # -> 真正的增量片段几乎不可能以「完整的旧文本」开头, 判别有效
+                                    tgt_tool_msg["args"] = v if v.startswith(prev_args) else prev_args + v
                                 elif v is not None:
                                     tgt_tool_msg["args"] = json.dumps(v, ensure_ascii=False)
                                 continue
@@ -530,13 +543,39 @@ class ChatBody:
                             if v is None:
                                 continue
                             tgt_tool_msg[k] = v
-                        # 渲染界面 (非切换重建)
+                        # 渲染界面 (非切换重建): 只原地改属性, **不重建块、不替换列表项**
+                        # -> 替换 controls[i] 会让 diff 退化成 remove + add, 而 Dart 侧
+                        #    remove/add 的 notify 目标正是**拥有 controls 的 Column**
+                        # -> 整列消息重建 => 每条消息里的 ft.Image 重新 build
+                        # -> base64 截图在 buildImage 里每次都会 base64.decode 出新的 Uint8List
+                        #    => ImageCache 必然 miss => PNG 反复解码 => 整窗闪烁
+                        # -> 改属性只 notify 副标题那个 ft.Text, 重绘代价可以忽略
                         if is_current and is_synced:
-                            EndPoints.chat["chat_body"].current.content.controls[-idx] = MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
+                            if tgt_blk is None:
+                                tgt_blk = EndPoints.chat["chat_body"].current.content.controls[-idx]
+                            # 副标题 = 参数预览 (与 build_blk_ai_tool_call 的初值同一工厂)
+                            tgt_blk.content.subtitle.value = MessageUtilsCommon.format_tool_call_args_preview(tgt_tool_msg.get("args"))
+                            # 工具名可能晚于首个 chunk 才到达 (首个 chunk 常常只有 id)
+                            tool_name = tgt_tool_msg.get("name")
+                            if tool_name:
+                                tgt_blk.content.title.controls[1].value = tool_name
                         break
                 # 刷新界面 (滚动到底部由 ft.Column 中的 auto_scroll 负责)
+                # -> 块级更新: Control.update() 内部是 page.update(self) -> session.patch_control(self)
+                #    只对「本条工具块」这棵子树做 diff, 不再遍历整个 page 树
+                # -> 客户端侧只会 notify 副标题那个 ft.Text (属性所属控件), 不波及其它消息块
+                # -> 兜底 1: 块是本次新建的 -> 还没挂到树上, 只能整页刷新
+                # -> 兜底 2: 块已被移出控件树 (切会话重建面板) -> update() 抛 RuntimeError,
+                #    不兜底会被外层 except 吞成「本轮 error」
                 if is_current and is_synced:
-                    EndPoints.root["page"].update()
+                    if tgt_blk is None or blk_created:
+                        EndPoints.root["page"].update()
+                    else:
+                        try:
+                            tgt_blk.update()
+                        except RuntimeError:
+                            logger.warning(f"tool_call block is detached, fall back to page update. session_id={chat_session_id}")
+                            EndPoints.root["page"].update()
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
 

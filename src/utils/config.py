@@ -565,7 +565,7 @@ class ProfileUtils:
         """
         try:
             general_settings = self.app_user_dict["general_settings"]
-            font_family = general_settings.get("font_family_global", "Microsoft YaHei")
+            font_family = general_settings.get("font_family_global", "Microsoft YaHei UI")
             return font_family
         except Exception as e:
             logger.error(e)
@@ -592,7 +592,7 @@ class ProfileUtils:
         """
         try:
             general_settings = self.app_user_dict["general_settings"]
-            font_family = general_settings.get("font_family_text", "Microsoft YaHei")
+            font_family = general_settings.get("font_family_text", "Microsoft YaHei UI")
             return font_family
         except Exception as e:
             logger.error(e)

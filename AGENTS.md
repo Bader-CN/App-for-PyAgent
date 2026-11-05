@@ -495,6 +495,85 @@ controls = controls[:b]                      # 服务端已变, 客户端不知�
 
 `ft` 控件是 dataclass，`==` 走**值比较**（`ref` 是 `InitVar`，不参与比较）。两轮内容完全相同的块**值相等**，用 `==` 会命中靠后的那一个 → 截断 / 删除位置就错了。跨块定位一律 `control is target`。
 
+### ⛔ 流式更新只能改属性，不能替换 / 增删列表项
+
+**`controls[i] = 新控件` 的代价是「整列重建」，不是「换一个元素」。** 已踩（2026-11-05，工具调用参数流式时整窗疯狂闪烁）：
+
+| 环 | 事实 |
+|---|---|
+| 1 | Python diff（`flet/controls/object_patch.py::_compare_lists`）对无 `key` 的控件按 `("id", id(obj))` 匹配；新对象 ⇒ key 不匹配 ⇒ 对该列表发 **remove + add**，不是对某个属性的 `replace` |
+| 2 | Dart 侧（`flet-1.0.5/lib/src/models/control.dart::Control.applyPatch`）remove/add 的 `node.control` 是**拥有该 list 属性的控件** ⇒ `notify()` ⇒ 整个列表控件子树重建；而 `replace` 一个标量属性的 `node.control` 是属性所属的那个控件 ⇒ 只重建它 |
+| 3 | 重建时 `ColumnControl.build` 重新 `buildWidgets`，于是**同一列里每条消息都重新 build**，不止被改的那条 |
+| 4 | `ImageControl.build` → `utils/images.dart::ResolvedAssetSource.from` 对 base64 / data URI **每次都重新 `base64.decode`**，产出新的 `Uint8List` → `MemoryImage` 的键（按 `Uint8List` 身份比较）每帧都不同 → **ImageCache 必然 miss，PNG 反复解码** |
+
+- 症状具两面性：**有 base64 截图时**是整窗闪烁 / CPU 飙升；**没有截图时**同一条路径照样整列重建，只是便宜到看不出来
+- 正确写法（与 `consume_reasoning` / `consume_text` 一致）：块只建一次，之后 `blk.content.subtitle.value = ...`、`blk.content.title.controls[1].value = ...`，再刷新界面
+- 已落地：`chat_body.consume_tool_calls_args`（原先每个 args chunk 都 `controls[-idx] = build_blk_ai_tool_call(...)`）
+- 同类高危动作：`controls.insert(...)` / `controls.remove(...)` / 整体重排 —— 只要发生在流式路径上，都必须先确认列表里有没有 base64 图片
+- 换来的连带好处：副标题改属性后不再重建，`ExpansionTile` 的展开态与滚动位置不会被重置，也不需要 `maintain_state=True`
+
+#### 补充（2026-11-05 第二轮）：`append` 同样整列重建，白闪要靠 `gapless_playback` 挡
+
+改成「原地改属性」后仍然「参数流式时白闪一下」。用探针（见下）确认 patch 已经干净：
+
+```
+block-level: [[0, {'content': [1, {'subtitle': [2]}]}], [Replace, 2, 'value', 'args2']]   # 只有 1 个 replace
+column-level: [[0]]                                                                        # 无任何操作
+```
+
+∴ 残留的白闪**不在 diff 里**，而在「每次新增块」这一次性结构变化上：
+
+| 事实 | 说明 |
+|---|---|
+| `append` ⇒ add 操作 | Dart `applyPatch` 的 add 分支固定 `node.control.notify()`，`node.control` 是拥有 `controls` 的 **Column** |
+| Column notify ⇒ 整列 rebuild | `ColumnControl.build` → `buildWidgets` → 列里**每个** `ControlWidget` 都重新 build |
+| Image 重新 build ⇒ 重新 decode | base64 → 新 `Uint8List` → 新 `MemoryImage` |
+| `gapless_playback=False`（默认）⇒ **白一帧** | Flutter `Image.didUpdateWidget` 在 provider 变化时把 `_imageInfo = null`，等解码完再显示 |
+| `gapless_playback=True` ⇒ 不白 | 保留上一帧直到新图就绪 |
+
+- 结论：**含 base64 的 `ft.Image` 在本项目的消息列表里必须 `gapless_playback=True`**，这不是可选优化
+- 每轮 append 次数固定（思考首块 / 每个工具块 / 正文首块），所以现象是「闪一下」而不是持续闪烁
+- 想连解码开销也消掉，只能让图片源变成**本地文件路径**（`Image.file` → `FileImage(path)`，ImageCache 的 key 是路径，重建也命中）。注意 web 端 `images_web.dart::getAssetSrc` 不支持本地文件，需按 `page.web` 回退
+
+#### 探针：离线确认 patch 里到底有什么操作
+
+```python
+import msgpack
+from flet.controls.base_control import BaseControl
+from flet.controls.object_patch import ObjectPatch
+from flet.messaging.protocol import configure_encode_object_for_msgpack
+
+encoder = configure_encode_object_for_msgpack(BaseControl)
+msgpack.packb(root, default=encoder)          # 递归建立 __prev_* 快照（必须走 msgpack，手动 encoder(root) 只处理顶层）
+# ... 修改控件 ...
+patch, added, removed = ObjectPatch.from_diff(node, node, control_cls=BaseControl)
+print(patch.to_message(), added, removed)     # 看有无 add/remove，还是只有 Replace
+```
+
+### 流式刷新用「块级 update」，不要整页 `page.update()`
+
+`BaseControl.update()`（`flet/controls/base_control.py`）= `page.update(self)` → `session.patch_control(self)`，**只对这一个控件子树做 diff**，不再遍历整棵 page 树；Dart 侧只会 notify 被改属性所属的那个控件。`consume_tool_calls_args` 已改用 `tgt_blk.update()`。
+
+两个必须兜底的边界（否则会被 `except` 吞成「本轮 error」或直接崩）：
+
+| 场景 | 现象 | 处理 |
+|---|---|---|
+| 块是**本次回调新建**的 | `_parent` 由首次 `patch_control` 才设置 ⇒ `update()` 抛 `RuntimeError: ... must be added to the page first` | 该次用整页 `page.update()`（顺带完成首次序列化，`__prev_classes` 快照才建立） |
+| 块已被移出控件树（切会话重建面板） | 同上抛 `RuntimeError` | `try/except RuntimeError` → 退回整页刷新 + `logger.warning` |
+
+- 前提：块必须已序列化过一次（`__prev_*` 快照存在），否则 diff 走不到嵌套字段 → 这就是「首建必须整页刷新」的真正原因
+- 块级 update 只减少**服务端 diff 范围与客户端 notify 范围**，消不掉布局链路的抖动（见下节）
+
+### 流式副标题封成单行，避免高度重排
+
+块级 update 之后仍剩的轻微抖动来自布局：副标题文本逐 chunk 变长 → `Text` 高度变 → `ExpansionTile` 尺寸变 → `chat_body` 的 Column 重排 + `auto_scroll` 跳底。
+修法：副标题 `ft.Text` 一律 `max_lines=1` + `overflow=ft.TextOverflow.ELLIPSIS` ⇒ 高度恒定，刷新只重绘这一个 Text。
+判据：**流式刷新的控件必须尺寸恒定**，宽度/高度随内容变的控件放在流式路径上就会持续重排。
+
+### 流式副标题一律用「截断预览」
+
+`MessageUtilsCommon.format_tool_call_args_preview(raw_args, max_chars=200)`：归一化（dict → JSON 文本）+ 折叠全部空白（含换行）+ 超长保留头部 + `" …"`。完整参数仍存 `aimsgs` / checkpointer，界面只显示预览。理由：副标题每个 chunk 都刷新，长度直接决定布局重排代价；且部分网关/端点**每个 delta 重复下发完整 args 快照**，按 `prev + v` 拼接会平方级膨胀（现场见到的 `{"keyword": ...}` 重复 6 次）。`consume_tool_calls_args` 现用 `v.startswith(prev_args)` 识别快照并整体覆盖。
+
 ## LangChain 注意事项
 
 LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / `reasoning` / `reasoning_details`）。本项目**不改 site-packages**，而是在 `src/cores/lc_hotfix_openai.py` 用子类覆盖 `_convert_chunk_to_generation_chunk`（等效 README 的 Patch ①）。
@@ -503,7 +582,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 - **必须带 `index: 0`**，否则长思考会在 checkpointer 里堆积多个 reasoning 块。
 - **同 delta 带 `tool_calls` 时跳过改写**，否则工具增量会从 v3 事件流消失。
 - **`astream.tool_calls` 的 `output` 类型随 langgraph 版本漂移**（已踩）：`call` 是 `ToolCallStream`，字段 `tool_call_id` / `tool_name` / `input` / `output` / `error` 稳定；但 `output` 在 1.2.14 是 `ToolMessage`，1.2.19 直接是**工具返回值**（本项目工具返回 `str`）。∴ 回填时匹配块一律用 `call.tool_call_id`，**不要读 `output.tool_call_id`**；`format_tool_msg_markdown` 已改为 `getattr(tool_msg, "content", tool_msg)` 兼容两种形态。
-- **`message.tool_calls` 的 `args` 也随版本漂移**（已踩）：1.6.9 给**已解析的 dict**（累计快照），1.7.x 给**本 chunk 的增量字符串片段**。∴ 直接 `tgt[k] = v` 赋值会把前面的参数丢掉，界面上只剩最后一个片段（典型症状：参数只显示 `}`）。`consume_tool_calls_args` 已改为：`str` 一律拼接、dict 序列化后覆盖，统一用 JSON 文本存在 `aimsgs[*]["args"]`（`msg_aborted_save` / `build_blk_ai_tool_call` 都按这个口径取）。`name` / `id` 在后续 chunk 里可能是 `None`，不要覆盖首次拿到的值。
+- **`message.tool_calls` 的 `args` 随版本 + 网关实现漂移**（已踩两次）：1.6.9 给**已解析的 dict**（累计快照），1.7.x 给**本 chunk 的增量字符串片段**，部分网关则**每个 delta 重复下发同一份完整快照**。∴ ① 直接 `tgt[k] = v` 会把前面的参数丢掉（症状：参数只显示 `}`）；② 一律 `prev + v` 又会平方级重复（症状：同一段 JSON 在副标题里重复累积）。`consume_tool_calls_args` 现行规则：`str` 且 `v.startswith(prev_args)` ⇒ 视为快照、整体覆盖，否则拼接；`dict` 序列化后覆盖；统一用 JSON 文本存在 `aimsgs[*]["args"]`（`msg_aborted_save` / `build_blk_ai_tool_call` 都按这个口径取）。`name` / `id` 在后续 chunk 里可能是 `None`，不要覆盖首次拿到的值。
 - 已知遗留：content 变为 list 后，后续纯文本 delta 可能以裸字符串 append，应用侧读回时由 `MessageUtilsCommon.format_ai_msg_content` 归一化。
 - **v1 content block**：`reasoning` / `text` / `tool_call` 是当前读写的统一形状；写入中止消息时显式带 `response_metadata.output_version="v1"`，避免再次按 provider 规则翻译。
 - **`aupdate_state` 必须显式 `as_node="model"`**：checkpoint 的 `versions_seen` 可能同时有 model / tools，LangGraph 推断会抛 `InvalidUpdateError: Ambiguous update`。
