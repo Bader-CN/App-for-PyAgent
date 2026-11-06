@@ -1,9 +1,12 @@
 import asyncio
+from pathlib import Path
 import flet as ft
 from endpoints import EndPoints
 from components.chat_body import ChatBody
 from components.common import AlertCommon
+from components.common import InputCommon
 from components.common import MessageBlockCommon
+from components.common import MessageUtilsCommon
 from utils.logging import logger
 
 
@@ -19,6 +22,11 @@ class ChatInput:
     """
     # 类别标记 (决定默认模型 / 思考强度 / i18n key 的取值)
     agent_type = "chat"
+    # 文件选择服务 (Flet service), 惰性创建后长期持有
+    # -> 构造时会自动注册到当前 page, 而 page 在每次事件结束后会回收「没有强引用」的 service
+    #    (Page._services.unregister_services 按引用计数清理)
+    # -> 故不能每次使用时临时 ft.FilePicker(), 否则可能被回收后调用失败
+    file_picker: ft.FilePicker | None = None
     # 布局常量
     btn_height = 32
     btn_width = 32
@@ -31,6 +39,7 @@ class ChatInput:
     def build_blk_input_tool_add_attachments(cls):
         """
         工具 - 添加附件
+        https://flet.dev/docs/services/filepicker
         """
         add_btn = ft.Container(
             ft.IconButton(
@@ -38,6 +47,7 @@ class ChatInput:
                 padding=0,
                 height=cls.btn_height,
                 width=cls.btn_width,
+                on_click=cls.callback_add_attachments,
             ),
         )
         return add_btn
@@ -166,6 +176,73 @@ class ChatInput:
         return input_tools
 
     @classmethod
+    def get_file_picker(cls) -> ft.FilePicker:
+        """
+        获取文件选择服务 (惰性创建并长期持有)
+
+        Note:
+        必须保留强引用, 原因见 file_picker 类属性的注释
+        """
+        if cls.file_picker is None:
+            cls.file_picker = ft.FilePicker()
+        return cls.file_picker
+
+    @classmethod
+    async def callback_add_attachments(cls, e):
+        """
+        选择本地图片并附加到输入栏的附件列表
+        https://flet.dev/docs/services/filepicker
+
+        Note:
+        - 附件按会话前缀存放, 故没有活动会话时直接忽略 (不弹选择框)
+        - 选中的图片统一转存为 PNG, 与截图共用同一套
+          「按会话前缀检索 -> 附件栏渲染 -> 发送时转 base64」机制
+        """
+        # 会话判定放在最前: 没有会话就没有附件归属, 也没必要让用户选文件
+        session_info = MessageUtilsCommon.session_id_current()
+        if session_info is None:
+            logger.warning("no active session, ignore adding attachments.")
+            return
+        session_id = session_info["session_id"]
+
+        # 只选图片; with_data=True 让各平台都能拿到字节流 (web 端没有 path)
+        files = await cls.get_file_picker().pick_files(
+            file_type=ft.FilePickerFileType.IMAGE,
+            allow_multiple=True,
+            with_data=True,
+        )
+        # 用户取消选择
+        if not files:
+            logger.debug("no image selected, ignore adding attachments.")
+            return
+
+        for file in files:
+            image_data = file.bytes
+            # 兜底: 极端情况下平台没给 bytes, 但有本地路径就直接读文件
+            if image_data is None and file.path:
+                image_data = await asyncio.to_thread(Path(file.path).read_bytes)
+            if not image_data:
+                logger.warning(f"image data not available, skip this file: {file.name}")
+                continue
+            # 解码 + 转存 PNG 可能耗时, 放到 worker 线程 (只碰文件, 不碰 ft 控件)
+            await asyncio.to_thread(
+                EndPoints.runtime["app_util_cache"].picked_image_add,
+                session_prefix=session_id,
+                image_data=image_data,
+                source_name=file.name,
+            )
+            logger.debug(f"attachment image saved: {file.name}")
+
+        # await 期间可能已切页 / 切会话
+        # -> 附件已经落盘, 切回会话时 refresh_input_attachments 会重新显示
+        # -> 但此时界面上的附件栏不再属于该会话, 不能刷
+        session_info_now = MessageUtilsCommon.session_id_current()
+        if session_info_now is None or session_info_now["session_id"] != session_id:
+            logger.warning("session changed while picking files, skip refreshing input attachments.")
+            return
+        InputCommon.refresh_input_attachments(session_id=session_id)
+
+    @classmethod
     def callback_send_user_msg(cls, e: ft.ControlEvent | None = None):
         """
         获取并整理用户输入的信息
@@ -227,6 +304,10 @@ class ChatInput:
                     on_delete=ChatBody.callback_msg_delete,
                 )
                 EndPoints.chat["chat_body"].current.content.controls.append(user_msg_blk)
+                # 用户消息块上屏后立即滚动到底部
+                # -> auto_scroll 只在「视图已钉在底部」时跟随, 用户上翻后发送不会跳底, 故显式滚一次
+                # -> run_task 派生的协程等本回调返回后才执行, 届时 append 的补丁已随 after_event 下发
+                page.run_task(ChatBody.msg_update_scroll_to_bottom)
                 # 清空内容和附件 (写空串而非 None, 与 TextField.value: str 的声明保持一致)
                 textfield.value = ""
                 EndPoints.input["input_attachments"].current.controls.clear()

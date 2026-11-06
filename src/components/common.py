@@ -266,25 +266,27 @@ class MessageUtilsCommon:
         font_family_code = EndPoints.runtime["app_util_profile"].font_family_code()
 
         return ft.MarkdownStyleSheet(
-            a_text_style=ft.TextStyle(font_family=font_family, size=13),
-            p_text_style=ft.TextStyle(font_family=font_family, size=13),
+            a_text_style=ft.TextStyle(font_family=font_family, size=14),
+            p_text_style=ft.TextStyle(font_family=font_family, size=14),
             # 行内代码默认是 11.9px + 内置 monospace, 由 code_text_style 来控制
             code_text_style=ft.TextStyle(font_family=font_family_code, size=12),
-            # 以下默认均为 bodyMedium(14), 不覆盖会比正文大 1px 且不受 text 字体控制
-            blockquote_text_style=ft.TextStyle(font_family=font_family, size=13),
-            checkbox_text_style=ft.TextStyle(font_family=font_family, size=13),
-            img_text_style=ft.TextStyle(font_family=font_family, size=13),
-            list_bullet_text_style=ft.TextStyle(font_family=font_family, size=13),
+            # 以下默认均为 bodyMedium(14), 不覆盖则不受 text 字体控制
+            blockquote_text_style=ft.TextStyle(font_family=font_family, size=14),
+            checkbox_text_style=ft.TextStyle(font_family=font_family, size=14),
+            img_text_style=ft.TextStyle(font_family=font_family, size=14),
+            list_bullet_text_style=ft.TextStyle(font_family=font_family, size=14),
             # 表头默认带 w600 字重, 覆盖时需一并保留
-            table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
-            table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
-            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
-            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
-            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
-            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
-            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            table_head_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.W_600),
+            table_body_text_style=ft.TextStyle(font_family=font_family, size=14),
+            # h1 ~ h6: 96DPI 下 YaHei 粗体在 16px (=12pt) 最稳
+            # -> 17~23 是非整 pt 位, 粗体下笔画粗细不匀 (实测); 想再大只能跳 24 (=18pt)
+            # -> h1/h2 顶格 16+W_700; h3 起降 W_600 换尺寸梯度 (W_600 下 15/14 不发虚)
+            h1_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h2_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h3_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h4_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h5_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
+            h6_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
         )
 
     @classmethod
@@ -313,13 +315,15 @@ class MessageUtilsCommon:
             # 表头默认带 w600 字重, 覆盖时需一并保留
             table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
             table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
-            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
-            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
-            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
-            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
-            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            # h1 ~ h6: 96DPI 下 YaHei 粗体在 16px (=12pt) 最稳
+            # -> 17~23 是非整 pt 位, 粗体下笔画粗细不匀 (实测); 想再大只能跳 24 (=18pt)
+            # -> h1/h2 顶格 16+W_700; h3 起降 W_600 换尺寸梯度 (W_600 下 15/14 不发虚)
+            h1_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h2_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h3_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h4_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h5_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
+            h6_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
         )
 
     @classmethod
@@ -348,13 +352,15 @@ class MessageUtilsCommon:
             # 表头默认带 w600 字重, 覆盖时需一并保留
             table_head_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.W_600),
             table_body_text_style=ft.TextStyle(font_family=font_family, size=13),
-            # h1 ~ h6 (行尾注释为 fromTheme 默认字号)
-            h1_text_style=ft.TextStyle(font_family=font_family, size=20, weight=ft.FontWeight.BOLD),  # 默认 headlineSmall(24)
-            h2_text_style=ft.TextStyle(font_family=font_family, size=18, weight=ft.FontWeight.BOLD),  # 默认 titleLarge(22)
-            h3_text_style=ft.TextStyle(font_family=font_family, size=16, weight=ft.FontWeight.BOLD),  # 默认 titleMedium(16)
-            h4_text_style=ft.TextStyle(font_family=font_family, size=15, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h5_text_style=ft.TextStyle(font_family=font_family, size=14, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
-            h6_text_style=ft.TextStyle(font_family=font_family, size=13, weight=ft.FontWeight.BOLD),  # 默认 bodyLarge(16)
+            # h1 ~ h6: 96DPI 下 YaHei 粗体在 16px (=12pt) 最稳
+            # -> 17~23 是非整 pt 位, 粗体下笔画粗细不匀 (实测); 想再大只能跳 24 (=18pt)
+            # -> h1/h2 顶格 16+W_700; h3 起降 W_600 换尺寸梯度 (W_600 下 15/14 不发虚)
+            h1_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h2_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_700, size=16),
+            h3_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h4_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=15),
+            h5_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
+            h6_text_style=ft.TextStyle(font_family=font_family, weight=ft.FontWeight.W_600, size=14),
         )
 
     @classmethod
@@ -1211,8 +1217,15 @@ class InputCommon:
         Return:
         - ft.Container 控件对象
         """
+        # 文件名以会话前缀开头, 故按标记位取尾部作为显示名
+        # -> 不认识的命名 (未来新增的附件类型) 直接显示完整文件名, 不留下未绑定的 display_name
         if "_screenshot_" in file_name:
-            display_name = f"screenshot_{file_name.split("_screenshot_", 1)[-1][:-4]}"
+            display_name = f"screenshot_{file_name.split('_screenshot_', 1)[-1][:-4]}"
+        elif "_picked_" in file_name:
+            # <会话前缀>_picked_<序号>_<原文件名主干>.png
+            display_name = file_name.split("_picked_", 1)[-1].split("_", 1)[-1][:-4]
+        else:
+            display_name = file_name
         attachment = ft.Container(
             ft.Row(
                 controls=[
@@ -1226,6 +1239,11 @@ class InputCommon:
                     ),
                 ],
                 spacing=0,
+                # tight=True 必须显式设置
+                # -> 附件栏是 wrap=True 的 Row, 子控件收到的是「有界」宽度约束
+                # -> 内层 Row 默认会撑满这个宽度, 单个附件就占满整行 (实测 664px vs 贴身 194px)
+                # -> 非 wrap 的 Row 给子控件无界约束时才碰巧贴身, 故切换布局后会静默变样
+                tight=True,
             ),
             # 数据外部也保留一份, 这样比较好获取
             data={"type": file_type, "filename": file_name},
@@ -1241,12 +1259,21 @@ class InputCommon:
         """
         位于文本输入上方的附件栏
 
+        Note:
+        - wrap=True: 附件超出可用宽度时换行, 否则多张图片会横向挤压 / 溢出
+        - wrap 给子控件的是「有界」宽度约束, 因此 build_blk_input_attachment 里的内层 Row
+          必须 tight=True, 否则单个附件会占满整行
+        - vertical_alignment 不支持 STRETCH / BASELINE (Flet 会自动回退成 CENTER, 这里用默认值即可)
+
         Return:
         - ft.Row 控件对象
         """
         input_attachments = ft.Row(
             controls=[],
             ref=EndPoints.input["input_attachments"],
+            wrap=True,
+            spacing=5,
+            run_spacing=5,
         )
         return input_attachments
 
@@ -1278,8 +1305,15 @@ class InputCommon:
         Args:
         - session_id: 搜索附件的范围是基于哪个会话ID
         """
-        # 先清空所有附件控件
-        EndPoints.input["input_attachments"].current.controls.clear()
+        # 先取附属到界面上的附件栏
+        # -> 附件栏随输入面板重建, ref 可能已被回收 (如等待文件选择框期间切过页)
+        # -> 此时直接返回: 附件仍在磁盘上, 切回会话时会再次刷新
+        attachments_row = EndPoints.input["input_attachments"].current
+        if attachments_row is None:
+            logger.warning("input_attachments not available, skip refreshing input attachments.")
+            return
+        # 清空所有附件控件
+        attachments_row.controls.clear()
 
         # session_id_chat_current / session_id_agent_current 是互斥的关系
         # -> 未显式传入时, 统一交由 MessageUtilsCommon.session_id_current 识别
@@ -1295,5 +1329,5 @@ class InputCommon:
         if images:
             for filename in images:
                 image_blk = cls.build_blk_input_attachment(file_type="image", file_name=filename)
-                EndPoints.input["input_attachments"].current.controls.append(image_blk)
+                attachments_row.controls.append(image_blk)
             EndPoints.root["page"].update()

@@ -10,7 +10,8 @@ Flet 桌面应用，通过 LangChain / LangGraph 与 LLM 对话，纯 Python。D
 | settings | 可用：语言、默认模型、模型服务（provider / model 增删改拖拽） |
 | docs | **占位**：导航到 docs 只清空会话 ID，主视图为空白 |
 | agent（deep agent） | **占位**：`agent_main` / `agent_translation` / `state_graph_agent_update` 均未实现 |
-| 复制 / 标题刷新 / 添加附件按钮 | **占位**：`callback_msg_copy` 为 `pass`，`build_blk_title_rename` / `build_blk_input_tool_add_attachments` 无 `on_click` |
+| 复制 / 标题刷新 | 复制可用；标题刷新**占位**（`build_blk_title_rename` 无 `on_click`） |
+| 添加附件 | 可用：选择本地图片 → 转存 PNG → 附件栏（与截图共用同一条链路） |
 
 ## Run
 
@@ -328,14 +329,14 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 |---|---|---|
 | `ConfigUtils` | `config.py` | 读写 `app_path_data/config.yaml`：模型服务商（`model_providers`）及其模型 |
 | `ProfileUtils` | `config.py` | 读写 `app_path_data/profile.yaml`：语言、默认模型、思考强度、`chat_view` 宽度等用户偏好 |
-| `CacheUtils` | `cache.py` | `tmp_msgs` 初始化/删除、`app_path_data/tmp_msgs_state.yaml` 镜像（`status` / `reason` / `detail`）、剪切板截图（`app_path_temp/clipboard/`） |
+| `CacheUtils` | `cache.py` | `tmp_msgs` 初始化/删除、`app_path_data/tmp_msgs_state.yaml` 镜像（`status` / `reason` / `detail`）、剪切板截图与附件图片（`app_path_temp/clipboard/`） |
 | `FileDataUtils` | `data.py` | 读写 `app_path_data/{sort_chat,sort_agent}.yaml`（会话顺序/标题），带内存缓存 |
 | `LanguageUtils` | `i18n.py` | 从 `src/locales/{lang}.yaml` 加载扁平 key-value 翻译 |
 | loguru | `logging.py` | 双 sink：stderr `TRACE` + `app_path_data/logs/app.log` `DEBUG`（`10 MB` 轮转、保留 10 份历史、UTF-8、`diagnose=False`）；`setup_file_logging` / `install_exception_hooks` 于 `main.py` 模块级接线 |
 
 - `ConfigUtils`：`models_list_enable()` 返回 `["<provider>/<model_name>", ...]`（只含已启用 provider）；`providers_dict()` 返回**内部字典引用**（原地修改才会写回）；`provider_api_url/key/type` 读写单个字段，`provider_models_add/edit/del` 维护模型列表。
 - `ProfileUtils`：`default_model(type)` 在 provider 被禁用时返回 `None`；`language()` 会同步 `EndPoints.runtime["app_language"]`；`language_set()` 同时重载 `LanguageUtils`。
-- `CacheUtils`：截图文件名 `<session_prefix>_screenshot_<n>.png`，按前缀隔离；`tmp_msgs_del` 只在 `status` 为 `None/stop/error` 时真正删除（`aborted` 会保留缓存）。
+- `CacheUtils`：截图文件名 `<session_prefix>_screenshot_<n>.png`，选择的附件图片为 `<session_prefix>_picked_<n>_<原文件名主干>.png`，都按前缀隔离且**统一存为 PNG**（`image_save_png` 是两者共用的转存实现）；附件栏靠 `clipboard_image_get` 按前缀列出 `.png` 即可同时覆盖两种来源；`tmp_msgs_del` 只在 `status` 为 `None/stop/error` 时真正删除（`aborted` 会保留缓存）。
 - `FileDataUtils`：`data_read` 首次读文件后缓存在 `app_data_dict`，文件不存在时自动 `data_init` 建空列表。
 - `logging.py`：**日志不能写在 exe 旁边**（bundle 只读）。文件 sink 落 `EndPoints.runtime["app_path_log"]` = `<app_path_data>/logs/app.log`，路径在 `main()` 启动摘要里打印。打包版的 stderr 被 Flet 接到 `getApplicationCacheDirectory()/console.log`（`build/flutter/lib/main.dart`），**下次启动会覆盖、系统也可能清理**，只适合即时排查，不要用它查历史。`diagnose=False` 刻意关闭：开启会把局部变量（含 api_key / 请求头）写进日志。
 
@@ -412,6 +413,13 @@ ft.PopupMenuButton(
 - `tooltip` 是基类 `Control` 的继承属性（[文档](https://flet.dev/docs/controls/control)），各控件页面不单列，属正常
 - 机制：Flet 给底层 Flutter 传 `tooltip: null` → Flutter 回退默认 `showMenuTooltip`；设 `tooltip=""` 后内层默认提示被隐藏
 
+### `ft.FilePicker` 等 Service：构造即注册，**必须有强引用**
+
+`Service`（`FilePicker` / `Clipboard` / `StoragePaths` ...）在 `__post_init__` 里用 `context.page` 自动注册到 `Page._services`，但 `Session.after_event` 每次事件结束都会调 `ServiceRegistry.unregister_services()`，**按 `sys.getrefcount` 把没人引用的 service 摘掉**（3.13 阈值 `> 4`）。
+
+- ∴ 需要跨多次调用复用的 service（如 `ChatInput.file_picker`）必须存成类属性 / 实例属性，不能每次 `ft.FilePicker()` 临时创建
+- 构造必须在事件回调内（`context.page` 在 `Session.dispatch_event` 里 `set`，跨 `await` 有效）
+
 ### `ft.Markdown` 的换行 / 代码块
 
 - Markdown 把单个 `\n` 当软换行折叠成空格；用户输入的换行必须走 `MessageUtilsCommon.format_user_msg_markdown`（行尾补两个空格），或改用 `ft.Text(selectable=True)`。
@@ -450,6 +458,15 @@ ft.PopupMenuButton(
 ### `ReorderableListView`
 
 用 `show_default_drag_handles=False` + 每项自带 `ft.ReorderableDragHandle`，`on_reorder` 里对**后端数据**和**界面 controls** 各做一次 `pop` + `insert`（模型列表若不手动同步会出现界面与配置不一致）。`insert(index, value)` 是移动语义，不要用交换。
+
+### `ft.Row(wrap=True)`：子控件会被拉满整行，必须给内层 Row 加 `tight=True`
+
+附件栏用 `ft.Row(wrap=True)` 换行，但 **wrap 给子控件的是有界宽度约束**，内部若再套一个 `ft.Row`（附件 chip 的「文本 + 删除按钮」就是这种结构），该 Row 会撑满整个 run → 单个附件占满一行（实测 664px vs 贴身 194px）。
+
+- 普通 `Row`（非 wrap）给子控件**无界**约束，内层 Row 撑不满 ⇒ 看起来正常，切到 wrap 才静默变样
+- 修法：内层 `ft.Row(..., tight=True)`。实测 `tight=True` 在 wrap / 非 wrap 下都贴身
+- ⚠️ `flet/controls/core/row.py` 的文档把 `tight` 写反了（原文说 True = 占满可用宽度），且「仅在 wrap 为 False 时生效」也不成立
+- 生效实现：`InputCommon.build_blk_input_attachment` / `build_blk_input_attachments`
 
 ### `ListTile` 局部更新
 
@@ -618,8 +635,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 
 - `docs` 页只有导航占位，没有内容视图。
 - deep agent（agent 界面 / `agent_main` / `agent_translation` / `state_graph_agent_update`）未接入。
-- 复制按钮（`callback_msg_copy`）、标题刷新按钮（`build_blk_title_rename` 无 `on_click`）、添加附件按钮（`build_blk_input_tool_add_attachments` 无 `on_click`）均为占位。
-- `InputCommon.build_blk_input_attachment` 的 `display_name` 只在文件名含 `_screenshot_` 时赋值；其他附件类型会 `UnboundLocalError`（当前只接截图，未触发）。
+- 复制按钮（`callback_msg_copy`）与添加附件按钮（`build_blk_input_tool_add_attachments` → `callback_add_attachments`）均已可用；标题刷新按钮（`build_blk_title_rename` 无 `on_click`）仍为占位。
 - `msg_aborted_save` 未判断 `agent_chat is None`，会走到 `aupdate_state` 抛 `AttributeError` 并被 `except` 吞掉 → aborted 内容静默不入库。
 - `msg_update_stream` 正常结束分支直接取 `aimsgs[-1]`；模型没有产出任何块时会 `IndexError`。
 - `MessageUtilsCommon.msg_title_summary_chat` 要求 `last_user_msg` / `last_ai_msg` 同时存在，缺失时已改为 `logger.warning` + `return`（不再走 `UnboundLocalError` 被吞的旧路径）。防重入标记位 `EndPoints.tmp_title_summarizing` 的形状是**守卫/置位在 `try` 之外 + `finally` 复位**：守卫的 `return` 绝不能经过 `finally`（会清掉正在进行那一轮的标记位 → 并发重复总结），复位用 `pop(..., None)`。模型调用经 `asyncio.to_thread` 执行，之后的界面渲染留在主线程。且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。

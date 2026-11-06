@@ -27,6 +27,7 @@ from utils.logging import logger, setup_file_logging, install_exception_hooks
 EndPoints.runtime["app_path_root"] = str(Path(__file__).resolve().parent)
 
 # 可写数据目录: 打包后的 bundle 应视为只读, 可写文件一律放 Flet 注入的存储目录
+# https://flet.dev/docs/cookbook/read-and-write-files
 # (flet run 与桌面端生产模式都会设置这两个环境变量, 前者指向 src/.flet/storage/*,
 #  后者指向系统应用支持目录)
 # 环境变量缺失时 (直接 python src/main.py 运行) 回退到仓库根 storage/*

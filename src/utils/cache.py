@@ -165,15 +165,65 @@ class CacheUtils:
             filename = f"{session_prefix}_screenshot_{str(num)}.png"
             if filename not in images:
                 image_path = os.path.abspath(os.path.join(self.tmp_clipboard_dir, filename))
-                # 用 Pillow 从字节流解析图片, 再重新保存为标准 PNG
-                with Image.open(io.BytesIO(image_data)) as img:
-                    logger.debug(f"Clipboard image info: format={img.format}, mode={img.mode}, size={img.size}")
-                    # 为了兼容性, 统一转成 RGBA 或 RGB
-                    if img.mode not in ("RGB", "RGBA"):
-                        img = img.convert("RGBA")
-                    img.save(image_path, format="PNG")
+                self.image_save_png(image_data=image_data, image_path=image_path)
                 break
             num += 1
+
+    def picked_image_add(self, session_prefix: str, image_data, source_name: str = "") -> str:
+        """
+        将用户从本地选择的图片保存为临时附件, 并返回保存后的文件名
+
+        Note:
+        - 与截图共用 app_path_temp/clipboard 目录和「<会话前缀>_<类型>_<序号>」命名
+          -> 附件栏的检索 / 删除 / 发送时转 base64 都复用 clipboard_image_* 那一套
+        - 统一转存为 PNG: 原图可能是 jpg / webp / heic, 扩展名混杂会让检索与 MIME 判断变复杂
+        - 文件名保留原文件名主干, 让附件栏能显示出「选的是哪张图」
+
+        Args:
+        - session_prefix (str): 会话前缀
+        - image_data:          图片原始字节
+        - source_name (str):   原文件名 (仅用于生成显示名, 可为空)
+
+        Return:
+        - str: 保存后的文件名
+        """
+        # 设定路径对象
+        directory = Path(self.tmp_clipboard_dir)
+        # 创建目录 (不存在则创建,含父级; 已存在则跳过)
+        directory.mkdir(parents=True, exist_ok=True)
+        # 序号: 基于同前缀已存在的 picked 文件推算; 删除过中间项时靠 while 避开重名
+        existing = [f.name for f in directory.iterdir() if f.is_file() and f.name.startswith(f"{session_prefix}_picked_")]
+        num = len(existing) + 1
+        while any(name.startswith(f"{session_prefix}_picked_{num}_") for name in existing):
+            num += 1
+        # 原文件名主干只保留安全字符, 避免路径分隔符 / 特殊字符污染文件名
+        stem = os.path.splitext(os.path.basename(source_name or ""))[0]
+        stem = "".join(c if c.isalnum() or c in "-_" else "_" for c in stem)[:50] or "image"
+        filename = f"{session_prefix}_picked_{num}_{stem}.png"
+        self.image_save_png(
+            image_data=image_data,
+            image_path=os.path.abspath(os.path.join(self.tmp_clipboard_dir, filename)),
+        )
+        return filename
+
+    def image_save_png(self, image_data, image_path: str):
+        """
+        图片字节 -> 标准 PNG 文件
+
+        Note:
+        统一格式后, 附件栏只需按 .png 检索, 转 base64 时 MIME 也固定为 image/png
+
+        Args:
+        - image_data:   图片原始字节
+        - image_path:   目标文件的绝对路径
+        """
+        # 用 Pillow 从字节流解析图片, 再重新保存为标准 PNG
+        with Image.open(io.BytesIO(image_data)) as img:
+            logger.debug(f"Image info: format={img.format}, mode={img.mode}, size={img.size}")
+            # 为了兼容性, 统一转成 RGBA 或 RGB
+            if img.mode not in ("RGB", "RGBA"):
+                img = img.convert("RGBA")
+            img.save(image_path, format="PNG")
 
     def clipboard_image_get(self, session_prefix=None):
         """

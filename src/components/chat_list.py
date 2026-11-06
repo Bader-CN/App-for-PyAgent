@@ -36,7 +36,9 @@ class ChatList:
         构建一个会话项
         """
         session_item = ft.ListTile(
-            title=ft.Text(title, size=12),
+            # ft.TextOverflow.CLIP 多余内容裁剪掉
+            # https://flet.dev/docs/types/textoverflow
+            title=ft.Text(title, size=12, max_lines=1, overflow=ft.TextOverflow.CLIP),
             dense=True,
             leading=ft.ReorderableDragHandle(
                 content=ft.Icon(ft.Icons.DRAG_INDICATOR, color=ft.Colors.GREY_500, size=20),

@@ -153,6 +153,23 @@ class ChatBody:
         await astream.abort()
 
     @classmethod
+    async def msg_update_scroll_to_bottom(cls):
+        """
+        强制消息列表滚动到底部
+        """
+        chat_body = EndPoints.chat["chat_body"].current
+        # chat_body 容器或其内的消息 Column 不在 (未渲染 / 已切页), 无需滚动
+        if chat_body is None or chat_body.content is None:
+            logger.warning("chat_body not available, skip scroll to bottom.")
+            return
+        try:
+            # offset=-1: 负值按「距底部」解释, -1 即跳到最底
+            # duration=0: 瞬时跳底, 与 auto_scroll_animation=0 口径一致
+            await chat_body.content.scroll_to(offset=-1, duration=0)
+        except RuntimeError as e:
+            logger.warning(f"scroll to bottom failed: {e}")
+
+    @classmethod
     async def msg_update_stream(cls, user_msg):
         """
         以异步的方式更新流式消息
