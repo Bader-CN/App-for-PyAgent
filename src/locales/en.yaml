@@ -23,6 +23,7 @@ proxy_ignore: "Ignore Rules"
 web_search: "Web Search"
 web_search_proxy: "Search Proxy"
 web_search_engine: "Search Engine"
+web_search_api_url: "Search Engine API URL"
 web_search_max_length: "Max Length of Search Results (Characters)"
 
 # Default Models

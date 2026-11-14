@@ -63,6 +63,7 @@ class SettingsView:
         self.blk_proxy_ignore = SettingsGeneral.build_blk_proxy_ignore()
         self.blk_web_search = SettingsGeneral.build_blk_web_search()
         self.blk_web_search_engine = SettingsGeneral.build_blk_web_search_engine()
+        self.blk_web_search_api_url = SettingsGeneral.build_blk_web_search_api_url()
         self.blk_web_search_proxy = SettingsGeneral.build_blk_web_search_proxy()
         self.blk_web_search_max_length = SettingsGeneral.build_blk_web_search_max_length()
         # 子组件: 默认服务部分
@@ -183,6 +184,8 @@ class SettingsView:
                                 self.blk_web_search_proxy,
                                 ft.Divider(height=1),
                                 self.blk_web_search_engine,
+                                ft.Divider(height=1),
+                                self.blk_web_search_api_url,
                                 ft.Divider(height=1),
                                 self.blk_web_search_max_length,
                             ],

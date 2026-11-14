@@ -58,6 +58,7 @@ class EndPoints:
         "font_family_text": ft.Ref[ft.Text](),
         "font_family_code": ft.Ref[ft.Text](),
         "web_search_engine": ft.Ref[ft.Text](),
+        "web_search_api_url": ft.Ref[ft.TextField](),
     }
 
     # 视图对象
@@ -98,7 +99,9 @@ class EndPoints:
         # 应用运行时的语言
         "app_language": None,
         # 内嵌可选搜索引擎
-        "web_search_engine": ["Bing", "DuckDuckGo"],
+        "web_search_engine": ["Bing", "DuckDuckGo", "SearXNG"],
+        # 支持调整 API_URL 的 Web_Search_Engine
+        "web_search_support_api_url": ["SearXNG"],
         # 支持的协议
         "llm_protocol": ["OpenAI", "Ollama"],
         # 设置界面最后点击的提供商详情

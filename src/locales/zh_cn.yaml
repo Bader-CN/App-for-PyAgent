@@ -23,6 +23,7 @@ proxy_ignore: "忽略规则"
 web_search: "网页搜索"
 web_search_proxy: "搜索代理"
 web_search_engine: "搜索引擎"
+web_search_api_url: "搜索引擎 API 地址"
 web_search_max_length: "搜索结果最大长度 (字符)"
 
 # 默认模型

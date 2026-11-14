@@ -710,6 +710,35 @@ class ProfileUtils:
         except Exception as e:
             logger.error(e)
 
+    def web_search_api_url(self):
+        """
+        获取网络搜索API地址
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            # 仅针对特定引擎生效
+            if general_settings.get("web_search_engine", "Bing") in EndPoints.runtime["web_search_support_api_url"]:
+                web_search_api_url = general_settings.get("web_search_api_url", "")
+                return web_search_api_url
+            else:
+                return "Disable"
+        except Exception as e:
+            logger.error(e)
+
+    def web_search_api_url_set(self, web_search_api_url: str):
+        """
+        设置网络搜索API地址
+
+        Args:
+        - web_search_api_url: str 网络搜索地址的字符串
+        """
+        try:
+            if web_search_api_url != "Disable":
+                self.app_user_dict["general_settings"]["web_search_api_url"] = web_search_api_url
+                self.conf_save()
+        except Exception as e:
+            logger.error(e)
+
     def web_search_proxy(self):
         """
         是否启用网络搜索代理

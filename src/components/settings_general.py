@@ -25,7 +25,6 @@ FONT_ALL = [
     *FONT_MONO,             # 等宽字体纳入可选范围, 排在比例字体之后
 ]
 
-
 class SettingsGeneral:
     """
     通用设置组件
@@ -363,6 +362,39 @@ class SettingsGeneral:
         return blk_web_search_proxy
 
     @classmethod
+    def build_blk_web_search_api_url(cls):
+        """
+        搜索引擎 API 地址
+
+        Note: 目前仅针对 SearXNG 生效
+        """
+        search_engine = EndPoints.runtime["app_util_profile"].web_search_engine()
+        blk_web_search_api_url = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search_api_url"),
+                        data={"i18n_key": "web_search_api_url"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.TextField(
+                        value=EndPoints.runtime["app_util_profile"].web_search_api_url(),
+                        text_size=13,
+	                    text_style=ft.TextStyle(size=13),
+                        hint_style=ft.TextStyle(size=13, color=ft.Colors.GREY_500),
+                        dense=True,
+	                    content_padding=ft.Padding(left=0, top=5, right=0, bottom=5),
+                        on_blur=cls.callback_web_search_api_url,
+                        ref=EndPoints.settings["web_search_api_url"],
+                        read_only=False if search_engine in EndPoints.runtime["web_search_support_api_url"] else True,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        return blk_web_search_api_url
+
+    @classmethod
     def build_blk_web_search_max_length(cls):
         """
         构建 Web 搜索单次搜索所返回的最大字符长度组件
@@ -580,6 +612,14 @@ class SettingsGeneral:
             # 修改界面上显示的值
             EndPoints.settings["web_search_engine"].current.value = search_engine
 
+        # 调整 web_search_api_url 的显示值
+        if search_engine in EndPoints.runtime["web_search_support_api_url"]:
+            EndPoints.settings["web_search_api_url"].current.read_only = False
+            EndPoints.settings["web_search_api_url"].current.value = EndPoints.runtime["app_util_profile"].web_search_api_url()
+        else:
+            EndPoints.settings["web_search_api_url"].current.read_only = True
+            EndPoints.settings["web_search_api_url"].current.value = EndPoints.runtime["app_util_profile"].web_search_api_url()
+
     @classmethod
     def callback_web_search_proxy(cls, e: ft.ControlEvent):
         """
@@ -593,6 +633,16 @@ class SettingsGeneral:
         if web_search_proxy != EndPoints.runtime["app_util_profile"].web_search_proxy():
             # 更改配置文件
             EndPoints.runtime["app_util_profile"].web_search_proxy_set(web_search_proxy=web_search_proxy)
+
+    @classmethod
+    def callback_web_search_api_url(cls, e: ft.ControlEvent):
+        """
+        回调函数 - 用于设置搜索引擎 API 地址
+        """
+        web_search_api_url = e.control.value
+        if web_search_api_url != "Disable" and web_search_api_url != EndPoints.runtime["app_util_profile"].web_search_api_url():
+            # 更改配置文件
+            EndPoints.runtime["app_util_profile"].web_search_api_url_set(web_search_api_url=web_search_api_url)
 
     @classmethod
     def callback_web_search_max_length(cls, e:ft.ControlEvent):

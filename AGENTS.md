@@ -22,7 +22,7 @@ flet run src/main.py         # 演示
 
 - 入口 `src/main.py` → `ft.run(main)`；所有模块用**裸模块绝对导入** `from xxx import ...`（`endpoints` / `views.x` / `utils.x` 等）。原因：`flet build` 打包时 `src/` 就是应用根，bundle 里 `main.py` 与 `views/ components/ cores/ utils/ locales/` 同级，**不存在 `src` 包**。
 - `pyproject.toml` 是依赖与 Flet 配置的唯一来源：`[tool.flet.app] path = "src"` 指定应用目录（bundle 根 = `src/` 内容），dev 状态目录 `.flet/` 也生成在 `src/` 下。
-- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 22 项全部通过。
+- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 37 项全部通过。
 - **`tests/` 被 `.gitignore` 忽略**（与 `storage/` 一样），不受版本控制。
 - **LangChain OpenAI 的 `reasoning_content` 支持已内置于仓库**（`src/cores/lc_hotfix_openai.py`），无需再改 site-packages；README 里的手工 patch 是等价说明（README 的运行路径仍写作 `main.py`，已过时）。
 
@@ -322,6 +322,8 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 - **`lc_tools.py` — `LC_Tools`**：LangChain `@tool` 工具（当前：时间日期、关键词搜索、URL 抓取转纯文本）。
   - 工具内**异常不外抛**（返回字符串让模型看到失败原因），HTTP 请求必须带 `timeout`（当前 20s）。
   - `http_request_get_with_keyword` 的流水线固定四段，顺序不可换：**查表拼 URL**（`HTML_Utils.WEB_SEARCH_ENTRY[engine]`，`{keyword}` 由 `quote` 填）→ **`requests.get`**（UA / `timeout` / 代理，配置读 `app_util_profile`）→ **反爬拦截**（按引擎分派）→ **`http_content_format_keyword_<engine>`** 解析成 Markdown 编号列表。工具只负责"取"，URL 处理与 DOM 抽取全在 `HTML_Utils`。
+  - **SearXNG（JSON API）**：入口地址来自设置页的 `web_search_api_url()`（`WEB_SEARCH_ENTRY["searxng"] = "{base_url}/search?q={keyword}&format=json"`，`{base_url}` 是唯一由配置提供的占位，其余模板没有它、`format` 的多余 kwarg 会被忽略）。工具内归一化顺序：`strip().rstrip("/")` → `"Disable"` 视为未配置 → 末尾 `/search` 剥掉（填基础地址或完整端点都能用，避免 `/search/search`）；归一化后为空则 `logger.warning` + 返回 `请求失败: 未配置 SearXNG API 地址 ...`，**不发请求**。响应体按 `res.content.decode("utf-8")` 取（JSON 固定 UTF-8，`res.text` 的 charset 探测会误判中文），解析器只渲染 `results` 的 `title`/`url`/`content`，条数上限 `SEARXNG_RESULT_MAX = 10`，`unresponsive_engines` 只写日志。实例未在 `settings.yml` 的 `search.formats` 加 `json` 时返回 403 → 工具直接给出可操作提示（否则报错原文只有 `403 Client Error`）。
+  - **SearXNG 不做反爬 / 跳转还原**：它自己返回 JSON，上游引擎被限流体现为 `unresponsive_engines` 字段（只写日志，不影响返回文本）；`results` 里的 `url` 已是绝对地址。
   - **DuckDuckGo 反爬页**（HTTP 202 + `challenge-form` / `anomaly.js` / `anomaly-modal` 标记）在解析前由 `HTML_Utils.antibot_check_ddg` 拦下：返回 `请求失败: DuckDuckGo 返回反爬验证页 ...`（仍是普通字符串，不抛异常），并 `logger.warning` 记录状态码 / 最终 URL / 原始内容前 4000 字符。
   - **零结果**（SERP 结构一个条目都没命中）统一走 `HTML_Utils.handle_keyword_no_result`：`logger.warning` 记原始内容（`RAW_LOG_MAX_CHARS = 4000`），返回 `未获取到搜索结果: 页面结构未匹配 ...`，不再静默回退通用抽取（骨架文本对模型是纯噪声）。
   - `http_request_get_with_url` 只走 `http_content_format_url` 通用正文抽取；HTML → 纯文本用 `BeautifulSoup`（不用正则），保留绝对化链接，返回上限取 `web_search_max_length()`（默认 128000 字符）。
@@ -332,16 +334,17 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 
 | 层 | 成员（以 `duckduckgo` 为例） | 职责 | 何时必需 |
 |---|---|---|---|
-| 入口 | `WEB_SEARCH_ENTRY["duckduckgo"]` | SERP URL 模板，`{keyword}` 占位 | 必需 |
+| 入口 | `WEB_SEARCH_ENTRY["duckduckgo"]` | SERP URL 模板，`{keyword}` 占位（`searxng` 另有 `{base_url}`，由配置提供） | 必需 |
 | 链接还原 | `unwrap_redirect_ddg(url)` | 解 SERP 跳转链（Bing base64 / DDG `uddg`），解不出原样返回 | 仅 SERP 包跳转时 |
 | 反爬 | `ANTIBOT_MARKERS_DDG` + `antibot_check_ddg(content, status_code)` | 挑战页特征常量 + 判定；**状态码与 body 双判**（中转代理可能改写状态码） | 仅该引擎会反爬时 |
-| 解析 | `http_content_format_keyword_ddg(content, base_url)` | SERP → Markdown 编号列表 | 必需 |
+| 解析 | `http_content_format_keyword_ddg(content, base_url)` | SERP → Markdown 编号列表（`searxng` 吃 JSON，不是 HTML） | 必需 |
 
 - **反爬必须先于解析**：挑战页里没有结果条目，一旦让解析层兜底就只剩页面骨架——DDG 的说明文字全在 `<form id="challenge-form">` 内，会被 `SKIP_TAGS` 连表单一起丢掉（现场症状：工具输出只有两行 `DuckDuckGo`）。
 - **零结果兜底只有一份**：各引擎解析出 0 条时一律调 `handle_keyword_no_result(engine, ...)`，不要再写"回退通用抽取"。
 - **分层判据**：引擎私有的才带 `<engine>` 后缀；跨引擎共用（`RAW_LOG_MAX_CHARS` / `WEB_SEARCH_ENGINE_DEFAULT` / `handle_keyword_no_result`）保持无后缀，避免退化成"每个引擎一套"。常量用大写缩写引擎名（`ANTIBOT_MARKERS_DDG`），函数用 `WEB_SEARCH_ENTRY` 的键（`antibot_check_ddg`）——同一引擎两种写法并存不是笔误。
-- **新增引擎清单**（漏一项就少一层防护）：`WEB_SEARCH_ENTRY` 键 → `http_content_format_keyword_<engine>` → `antibot_check_<engine>` + `ANTIBOT_MARKERS_<ENGINE>` + 工具层反爬分支（命中即 `return "请求失败: ... 反爬验证页"`）→ 必要时 `unwrap_redirect_<engine>` → `EndPoints.runtime["web_search_engine"]` 下拉选项。
-- 测试：`tests/test_lc_tools_web_search.py`（离线，覆盖反爬判定 / 正常结果解析 / 零结果日志截断）。
+- **新增引擎清单**（漏一项就少一层防护）：`WEB_SEARCH_ENTRY` 键 → `http_content_format_keyword_<engine>` → `antibot_check_<engine>` + `ANTIBOT_MARKERS_<ENGINE>` + 工具层反爬分支（命中即 `return "请求失败: ... 反爬验证页"`）→ 必要时 `unwrap_redirect_<engine>` → `EndPoints.runtime["web_search_engine"]` 下拉选项。SearXNG 只实现了「入口 + 解析」两层，并额外要求：入口需要配置提供的 `{base_url}`、未配置时提前返回说明、`EndPoints.runtime["web_search_support_api_url"]` 含该引擎（设置页才允许编辑地址）。
+- **非 JSON vs 零结果的文案分界**：SearXNG 的响应体解析不出 JSON 属"取错了东西"，返回 `请求失败: SearXNG 返回内容不是合法 JSON ...`；JSON 合法但 `results` 为空/全被过滤才走 `handle_keyword_no_result`（`未获取到搜索结果`）。
+- 测试：`tests/test_lc_tools_web_search.py`（离线，覆盖反爬判定 / 正常结果解析 / 零结果日志截断 / SearXNG JSON 解析与 URL 组装）。
 
 ## 工具层（`src/utils/`）
 
@@ -391,6 +394,16 @@ default_models:
 chat_view: {lv1_view_width: 250}
 reasoning_level: {chat: Auto, agent: Auto}   # Off / Low / Medium / High / Auto
 ```
+
+`general_settings` 里的网页搜索相关键（**只在用户改过设置后才出现**，缺键由 `.get()` 兜底）：
+
+| 键 | 读取方 | 说明 |
+|---|---|---|
+| `web_search_engine` | `ProfileUtils.web_search_engine()` | 显示名（`Bing` / `DuckDuckGo` / `SearXNG`），工具内 `strip().lower()` 归一化后查 `WEB_SEARCH_ENTRY` |
+| `web_search_api_url` | `ProfileUtils.web_search_api_url()` | 仅引擎在 `web_search_support_api_url` 中时返回真实值，否则返回 `"Disable"`；填基础地址或完整 `/search` 端点均可 |
+| `web_search_proxy` | `ProfileUtils.web_search_proxy()` | 开关；开启但 `proxy_address` 为空时直连（只记 warning） |
+| `proxy_address` / `proxy_ignore` | 同名字段 | 代理地址与忽略规则，两个抓取工具共用 |
+| `web_search_max_length` | `web_search_max_length()` | 仅 `http_content_format_url` 截断用（默认 128000） |
 
 ## 配置管理策略
 
@@ -643,7 +656,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 | `src/utils/` | 工具层（config / cache / data / i18n / logging） |
 | `src/locales/*.yaml` | 扁平 key-value 翻译文件（en, zh_cn） |
 | `src/assets/` | 各平台应用图标 `icon.png`，由 `[tool.flet]` 打包使用 |
-| `tests/` | `test_lc_hotfix_openai.py`（14 项）+ `test_lc_tools_web_search.py`（8 项），纯离线；**被 .gitignore 忽略** |
+| `tests/` | `test_lc_hotfix_openai.py`（14 项）+ `test_lc_tools_web_search.py`（23 项），纯离线；**被 .gitignore 忽略** |
 | `storage/conf/` | **回退位置**：`FLET_APP_STORAGE_DATA` 缺失时 config.yaml / profile.yaml 落这里；正常 dev（`flet run`）数据在 `src/.flet/storage/data/`，运行时自动生成 |
 | `storage/data/` | **回退位置**：`sort_chat.yaml` / `sort_agent.yaml`（预留给 agent）/ `tmp_msgs_state.yaml` / `checkpointer.db` |
 | `storage/temp/` | **回退位置**：`clipboard/` 剪切板截图临时文件（正常 dev 走 `src/.flet/storage/temp/`） |

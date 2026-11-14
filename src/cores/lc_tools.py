@@ -1,6 +1,7 @@
 import base64
 import binascii
 import datetime
+import json
 import re
 import requests
 from urllib.parse import parse_qs, quote, urljoin, urlparse
@@ -62,8 +63,31 @@ class LC_Tools:
                 f"falling back to {HTML_Utils.WEB_SEARCH_ENGINE_DEFAULT}"
             )
             engine = HTML_Utils.WEB_SEARCH_ENGINE_DEFAULT
+
+        # SearXNG 的入口地址由用户在设置页填写(自建实例各不相同), 必须先取出来:
+        # 未填写时直接返回说明, 不发请求 —— 否则会拼出 "/search?q=..." 这种无域名的半截 URL
+        base_url = ""
+        if engine == "searxng":
+            base_url = (profile.web_search_api_url() or "").strip().rstrip("/")
+            # 引擎不支持 API 地址时 web_search_api_url() 会返回 "Disable", 等价于未配置
+            if base_url.lower() == "disable":
+                base_url = ""
+            # 兼容两种填法(基础地址 / 完整 /search 端点): 统一剥掉尾部 /search, 由模板补回,
+            # 否则填完整端点会得到 /search/search
+            if base_url.lower().endswith("/search"):
+                base_url = base_url[: -len("/search")].rstrip("/")
+            if not base_url:
+                logger.warning("web search engine is searxng but api url is empty")
+                return (
+                    "请求失败: 未配置 SearXNG API 地址, "
+                    "请先在 设置 - 常规设置 - 搜索引擎 API 地址 中填写"
+                )
+
         # {keyword} 占位: quote 负责百分号编码(空格/中文)
-        url = HTML_Utils.WEB_SEARCH_ENTRY[engine].format(keyword=quote(keyword))
+        # {base_url} 占位仅 searxng 模板使用, 其余模板没有它, format 会忽略多余的关键字参数
+        url = HTML_Utils.WEB_SEARCH_ENTRY[engine].format(
+            keyword=quote(keyword), base_url=base_url
+        )
 
         # 代理: 仅在设置页开启「搜索代理」且地址非空时启用, 否则传 None 走直连
         proxies = None
@@ -96,6 +120,13 @@ class LC_Tools:
                 res.encoding = res.apparent_encoding
             res.raise_for_status()
         except requests.exceptions.RequestException as e:
+            # SearXNG 默认不输出 JSON: 实例的 settings.yml 的 search.formats 未包含 json 时返回 403,
+            # 原始报错只有 "403 Client Error: Forbidden", 对模型毫无指向性, 换成可操作的说明
+            if engine == "searxng" and getattr(e.response, "status_code", None) == 403:
+                return (
+                    "请求失败: SearXNG 拒绝返回 JSON (HTTP 403), "
+                    "请在实例 settings.yml 的 search.formats 中加入 json 后重启实例"
+                )
             return f"请求失败: {type(e).__name__}: {e}"
 
         # 非文本响应(图片/PDF/压缩包等)直接拒: 否则 res.text 是二进制乱码, 白烧 token
@@ -103,23 +134,33 @@ class LC_Tools:
         if not any(kind in ctype for kind in ("html", "xml", "json", "text")):
             return f"该 URL 返回非文本内容 (Content-Type: {ctype}), 无法作为文本阅读"
 
+        # SearXNG 固定返回 UTF-8 JSON, 而响应头通常不带 charset: 走 apparent_encoding 探测
+        # 会被中文摘要误判(猜成 GB2312 等)导致乱码, 直接按 UTF-8 解码
+        # 其余引擎是 HTML, 继续用 res.text(带上面的 charset 纠正)
+        if engine == "searxng":
+            http_content = res.content.decode("utf-8", errors="replace")
+        else:
+            http_content = res.text
+
         # DDG 反爬页必须在解析前拦下: 挑战页没有结果条目, 会一路降级成只剩 "DuckDuckGo" 的页面骨架,
         # 模型拿到这种"结果"只会继续瞎猜。对模型按失败处理(普通字符串返回), 日志留原始内容便于排查
-        if engine == "duckduckgo" and HTML_Utils.antibot_check_ddg(res.text, res.status_code):
+        if engine == "duckduckgo" and HTML_Utils.antibot_check_ddg(http_content, res.status_code):
             logger.warning(
                 f"duckduckgo anti-bot challenge page: url={res.url}, "
-                f"status={res.status_code}, length={len(res.text)}\n"
+                f"status={res.status_code}, length={len(http_content)}\n"
                 f"--- raw content (first {HTML_Utils.RAW_LOG_MAX_CHARS} chars) ---\n"
-                f"{res.text[:HTML_Utils.RAW_LOG_MAX_CHARS]}\n"
+                f"{http_content[:HTML_Utils.RAW_LOG_MAX_CHARS]}\n"
                 f"--- end raw content ---"
             )
             return f"请求失败: DuckDuckGo 返回反爬验证页 (HTTP {res.status_code}), 请稍后重试或改用其他关键词"
 
         # 内容处理全部在 HTML_Utils, 本工具只负责"取":
         # base_url 传 res.url(重定向后的最终地址), 而非请求时的原始 URL
+        if engine == "searxng":
+            return HTML_Utils.http_content_format_keyword_searxng(http_content, res.url)
         if engine == "duckduckgo":
-            return HTML_Utils.http_content_format_keyword_ddg(res.text, res.url)
-        return HTML_Utils.http_content_format_keyword_bing(res.text, res.url)
+            return HTML_Utils.http_content_format_keyword_ddg(http_content, res.url)
+        return HTML_Utils.http_content_format_keyword_bing(http_content, res.url)
 
 
     @tool
@@ -198,11 +239,15 @@ class HTML_Utils:
     WEB_SEARCH_ENTRY = {
         "bing":       "https://www.bing.com/search?q={keyword}",
         "duckduckgo": "https://lite.duckduckgo.com/lite/?q={keyword}",
+        # {base_url} 是唯一由用户配置提供的占位(自建实例地址各不相同), 只有本引擎需要
+        "searxng":    "{base_url}/search?q={keyword}&format=json",
     }
     # 配置缺失 / 引擎名不认识时的回退项: 必应对纯 HTTP 客户端最稳
     WEB_SEARCH_ENGINE_DEFAULT = "bing"
     # 零结果 / 反爬时写日志的原始内容上限: 结果页 HTML 常有 20~100KB, 全量会撑爆单条日志
     RAW_LOG_MAX_CHARS = 4000
+    # SearXNG 结果条数上限: 实例可把 page size 调得很大, 全量塞给模型是纯 token 浪费
+    SEARXNG_RESULT_MAX = 20
     # DDG 反爬挑战页特征: 202 之外再按 body 兜底(状态码可能被中转代理改写)
     ANTIBOT_MARKERS_DDG = (
         'id="challenge-form"',
@@ -375,6 +420,69 @@ class HTML_Utils:
 
         if not lines:
             return HTML_Utils.handle_keyword_no_result("duckduckgo", base_url, http_content)
+        return "\n\n".join(lines)
+
+    @staticmethod
+    def http_content_format_keyword_searxng(http_content, base_url):
+        """
+        在 SearXNG 关键字检索时, 对获取到的 JSON 内容进行整理
+
+        SearXNG 的 /search?format=json 直接返回结构化结果, 无需 DOM 抽取:
+        results[*] 取 title / url / content, 输出与必应/DDG 同形的 Markdown 编号列表。
+
+        与 HTML SERP 的差异:
+        - 上游引擎失败不体现在结果结构上, 而是 unresponsive_engines 字段 -> 只写日志不进返回文本
+        - answers / infoboxes / suggestions 暂不渲染(结构冗长, 对模型价值低于 token 成本)
+        - 结果条数按 SEARXNG_RESULT_MAX 截断
+        """
+        # 实例未开启 json 输出 / 反代返回错误页时, 这里拿到的是 HTML, 不能当 dict 用
+        try:
+            payload = json.loads(http_content)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            payload = None
+        if not isinstance(payload, dict):
+            logger.warning(
+                f"searxng returned non-json content: url={base_url}, "
+                f"length={len(http_content)}\n"
+                f"--- raw content (first {HTML_Utils.RAW_LOG_MAX_CHARS} chars) ---\n"
+                f"{http_content[:HTML_Utils.RAW_LOG_MAX_CHARS]}\n"
+                f"--- end raw content ---"
+            )
+            return (
+                f"请求失败: SearXNG 返回内容不是合法 JSON "
+                f"(length={len(http_content)}), 请确认实例已开启 json 输出格式"
+            )
+
+        # 上游引擎被限流/反爬时结果会偏少, 但请求本身成功 -> 只留日志, 不打扰模型
+        unresponsive = payload.get("unresponsive_engines") or []
+        if unresponsive:
+            logger.warning(f"searxng unresponsive engines: url={base_url}, {unresponsive}")
+
+        results = payload.get("results")
+        if not isinstance(results, list):
+            results = []
+
+        lines = []
+        for item in results:
+            # 先判上限再处理, 省掉多余条目的解析
+            if len(lines) >= HTML_Utils.SEARXNG_RESULT_MAX:
+                break
+            if not isinstance(item, dict):
+                continue
+            title = (item.get("title") or "").strip()
+            href = (item.get("url") or "").strip()
+            # 缺标题或链接的条目对模型无意义(编号列表的意义就是可点开)
+            if not title or not href:
+                continue
+            snippet = (item.get("content") or "").strip()
+            # 编号用已产出的条数 +1: 上一条被跳过时不会出现断号
+            line = f"{len(lines) + 1}. [{title}]({href})"
+            if snippet:
+                line += f"\n   {snippet}"
+            lines.append(line)
+
+        if not lines:
+            return HTML_Utils.handle_keyword_no_result("searxng", base_url, http_content)
         return "\n\n".join(lines)
 
     @staticmethod
