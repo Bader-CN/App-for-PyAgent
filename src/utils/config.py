@@ -789,3 +789,28 @@ class ProfileUtils:
             self.conf_save()
         except Exception as e:
             logger.error(e)
+
+    def web_search_max_number(self):
+        """
+        获取网络搜索返回的最多结果数
+        """
+        try:
+            general_settings = self.app_user_dict["general_settings"]
+            web_search_max_number = general_settings.get("web_search_max_number", 10)
+            return web_search_max_number
+        except Exception as e:
+            logger.error(e)
+            return 10
+
+    def web_search_max_number_set(self, web_search_max_number:int):
+        """
+        设置网络搜索时返回的最多结果数
+        """
+        try:
+            if web_search_max_number <= 0:
+                web_search_max_number = 10
+                logger.warning(f"web_search_max_number can't be less than 0. will reset to {web_search_max_number}")
+            self.app_user_dict["general_settings"]["web_search_max_number"] = web_search_max_number
+            self.conf_save()
+        except Exception as e:
+            logger.error(e)

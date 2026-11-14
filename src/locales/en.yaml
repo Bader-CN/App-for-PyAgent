@@ -25,6 +25,7 @@ web_search_proxy: "Search Proxy"
 web_search_engine: "Search Engine"
 web_search_api_url: "Search Engine API URL"
 web_search_max_length: "Max Length of Search Results (Characters)"
+web_search_max_number: "Max Number of Search Results (Items)"
 
 # Default Models
 default_chat_model: "Chat Model"

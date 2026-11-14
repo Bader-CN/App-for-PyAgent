@@ -424,6 +424,38 @@ class SettingsGeneral:
         return blk_web_search_max_length
 
     @classmethod
+    def build_blk_web_search_max_number(cls):
+        """
+        构建 Web 搜索单次所返回的最多结果组件
+        """
+        blk_web_search_max_number = ft.Container(
+            ft.Row(
+                controls=[
+                    ft.Text(
+                        EndPoints.runtime["app_util_lang"].translate("web_search_max_number"),
+                        data={"i18n_key": "web_search_max_number"},
+                    ),
+                    ft.Container(expand=True, expand_loose=True),
+                    ft.Slider(
+                        value=EndPoints.runtime["app_util_profile"].web_search_max_number(),
+                        label="{value}",
+                        min=1,
+                        max=20,
+                        divisions=19,
+                        height=20,
+                        width=300,
+                        padding=0,
+                        # 悬停/拖动/focus 高亮全部消失
+                        overlay_color=ft.Colors.TRANSPARENT,
+                        on_change_end=cls.callback_web_search_max_number,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        return blk_web_search_max_number
+
+    @classmethod
     def callback_language_switch(cls, e: ft.ControlEvent):
         """
         回调函数 - 用于切换语言
@@ -653,6 +685,16 @@ class SettingsGeneral:
         if max_length != EndPoints.runtime["app_util_profile"].web_search_max_length():
             # 更改配置文件
             EndPoints.runtime["app_util_profile"].web_search_max_length_set(web_search_max_length=max_length)
+
+    @classmethod
+    def callback_web_search_max_number(cls, e:ft.ControlEvent):
+        """
+        回调函数 - 用于修改网络搜索结果的最大数量
+        """
+        max_number = int(e.control.value)
+        if max_number != EndPoints.runtime["app_util_profile"].web_search_max_number():
+            # 更改配置文件
+            EndPoints.runtime["app_util_profile"].web_search_max_number_set(web_search_max_number=max_number)
 
     @classmethod
     def refresh_i18n(cls, control: ft.BaseControl | None):

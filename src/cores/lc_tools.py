@@ -156,11 +156,13 @@ class LC_Tools:
 
         # 内容处理全部在 HTML_Utils, 本工具只负责"取":
         # base_url 传 res.url(重定向后的最终地址), 而非请求时的原始 URL
+        # 结果条数上限来自设置页, 三个引擎统一在解析层截断;
+        max_results = profile.web_search_max_number()
         if engine == "searxng":
-            return HTML_Utils.http_content_format_keyword_searxng(http_content, res.url)
+            return HTML_Utils.http_content_format_keyword_searxng(http_content, res.url, max_results)
         if engine == "duckduckgo":
-            return HTML_Utils.http_content_format_keyword_ddg(http_content, res.url)
-        return HTML_Utils.http_content_format_keyword_bing(http_content, res.url)
+            return HTML_Utils.http_content_format_keyword_ddg(http_content, res.url, max_results)
+        return HTML_Utils.http_content_format_keyword_bing(http_content, res.url, max_results)
 
 
     @tool
@@ -246,8 +248,6 @@ class HTML_Utils:
     WEB_SEARCH_ENGINE_DEFAULT = "bing"
     # 零结果 / 反爬时写日志的原始内容上限: 结果页 HTML 常有 20~100KB, 全量会撑爆单条日志
     RAW_LOG_MAX_CHARS = 4000
-    # SearXNG 结果条数上限: 实例可把 page size 调得很大, 全量塞给模型是纯 token 浪费
-    SEARXNG_RESULT_MAX = 20
     # DDG 反爬挑战页特征: 202 之外再按 body 兜底(状态码可能被中转代理改写)
     ANTIBOT_MARKERS_DDG = (
         'id="challenge-form"',
@@ -351,13 +351,15 @@ class HTML_Utils:
         return parse_qs(parts.query).get("uddg", [url])[0] or url
 
     @staticmethod
-    def http_content_format_keyword_bing(http_content, base_url):
+    def http_content_format_keyword_bing(http_content, base_url, max_results):
         """
         在关键字检索时, 对获取到的 HTTP 内容进行整理
 
         针对必应搜索结果页 (SERP) 做定向抽取: 每个 li.b_algo 提取标题 / 真实 URL / 摘要
         输出 Markdown 编号列表 (相比通用正文抽取, 结果更干净、token 更省)
         若一个结果都没命中 (必应改版或验证页), 写 warning 日志并返回明确的空结果说明
+
+        max_results: 结果条数上限, 由调用方从设置页配置传入
         """
         soup = BeautifulSoup(http_content, "html.parser")
         items = soup.select("ol#b_results > li.b_algo")
@@ -366,6 +368,9 @@ class HTML_Utils:
 
         lines = []
         for i, li in enumerate(items, start=1):
+            # 先判上限再处理, 省掉多余条目的解析
+            if len(lines) >= max_results:
+                break
             link_tag = li.select_one("h2 a[href]")
             if link_tag is None:
                 continue
@@ -385,13 +390,15 @@ class HTML_Utils:
         return "\n\n".join(lines)
 
     @staticmethod
-    def http_content_format_keyword_ddg(http_content, base_url):
+    def http_content_format_keyword_ddg(http_content, base_url, max_results):
         """
         在 DuckDuckGo 关键字检索时, 对获取到的 HTTP 内容进行整理
 
         针对 DDG lite 结果页做定向抽取: a.result-link 取标题与真实 URL,
         摘要在相邻的 td.result-snippet。输出 Markdown 编号列表。
         若一个结果都没命中(改版或反爬页), 写 warning 日志并返回明确的空结果说明。
+
+        max_results: 结果条数上限, 由调用方从设置页配置传入
         """
         soup = BeautifulSoup(http_content, "html.parser")
         links = soup.select("a.result-link")
@@ -400,6 +407,9 @@ class HTML_Utils:
 
         lines = []
         for i, a_tag in enumerate(links, start=1):
+            # 先判上限再处理, 省掉多余条目的解析
+            if len(lines) >= max_results:
+                break
             title = a_tag.get_text(" ", strip=True)
             if not title:
                 continue
@@ -423,7 +433,7 @@ class HTML_Utils:
         return "\n\n".join(lines)
 
     @staticmethod
-    def http_content_format_keyword_searxng(http_content, base_url):
+    def http_content_format_keyword_searxng(http_content, base_url, max_results):
         """
         在 SearXNG 关键字检索时, 对获取到的 JSON 内容进行整理
 
@@ -433,7 +443,7 @@ class HTML_Utils:
         与 HTML SERP 的差异:
         - 上游引擎失败不体现在结果结构上, 而是 unresponsive_engines 字段 -> 只写日志不进返回文本
         - answers / infoboxes / suggestions 暂不渲染(结构冗长, 对模型价值低于 token 成本)
-        - 结果条数按 SEARXNG_RESULT_MAX 截断
+        - 结果条数按 max_results 截断: 实例可把 page size 调得很大, 全量塞给模型是纯 token 浪费
         """
         # 实例未开启 json 输出 / 反代返回错误页时, 这里拿到的是 HTML, 不能当 dict 用
         try:
@@ -465,7 +475,7 @@ class HTML_Utils:
         lines = []
         for item in results:
             # 先判上限再处理, 省掉多余条目的解析
-            if len(lines) >= HTML_Utils.SEARXNG_RESULT_MAX:
+            if len(lines) >= max_results:
                 break
             if not isinstance(item, dict):
                 continue
