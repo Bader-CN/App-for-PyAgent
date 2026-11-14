@@ -22,7 +22,7 @@ flet run src/main.py         # 演示
 
 - 入口 `src/main.py` → `ft.run(main)`；所有模块用**裸模块绝对导入** `from xxx import ...`（`endpoints` / `views.x` / `utils.x` 等）。原因：`flet build` 打包时 `src/` 就是应用根，bundle 里 `main.py` 与 `views/ components/ cores/ utils/ locales/` 同级，**不存在 `src` 包**。
 - `pyproject.toml` 是依赖与 Flet 配置的唯一来源：`[tool.flet.app] path = "src"` 指定应用目录（bundle 根 = `src/` 内容），dev 状态目录 `.flet/` 也生成在 `src/` 下。
-- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 14 项全部通过。
+- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 22 项全部通过。
 - **`tests/` 被 `.gitignore` 忽略**（与 `storage/` 一样），不受版本控制。
 - **LangChain OpenAI 的 `reasoning_content` 支持已内置于仓库**（`src/cores/lc_hotfix_openai.py`），无需再改 site-packages；README 里的手工 patch 是等价说明（README 的运行路径仍写作 `main.py`，已过时）。
 
@@ -295,6 +295,7 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 | 工厂方法 | `build_blk_<subject>[_<sub_subject>][_<action>][_<type>]` | `build_blk_provider_item`、`build_blk_providers_list`、`build_blk_provider_add_btn` |
 | 回调方法 | `callback_<subject>[_<sub_subject>]_<action>` | `callback_provider_details_save`、`callback_sessions_reorder` |
 | common 积木 | 与所属类一致：`<subject>_<action>`（`AlertCommon`）或 `build_blk_*` / `callback_*`（`MessageBlockCommon` / `InputCommon`） | `alert_model_config_error`、`build_blk_err_msg` |
+| 解析层（`HTML_Utils`） | `<subject>_<action>_<engine>` / 常量 `<SUBJECT>_<ENGINE>` | `antibot_check_ddg`、`unwrap_redirect_bing`、`ANTIBOT_MARKERS_DDG`（详见下文「搜索引擎的分层归类」） |
 
 - `<type>` 后缀：`_btn`(Button) / `_tile`/`_item`(ListTile/列表项) / `_list`(ReorderableListView 等)
 - 单数主体 = 操作单实体；复数主体 = 操作整个集合（`provider_item_add` vs `providers_reorder`）
@@ -318,10 +319,29 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
   - `index: 0` 必需：否则每个 delta 各存一个 reasoning 块。
   - 同一 delta 带 `tool_calls` 时不改写 content（否则 v3 管线走 Responses 分支，工具增量从事件流消失）。
   - 不要用 `init_chat_model` 注入子类：其私有表 + `lru_cache` 固定 `ChatOpenAI`。
-- **`lc_tools.py` — `LC_Tools`**：LangChain `@tool` 工具（当前：时间日期、Bing 关键词搜索、URL 抓取转纯文本）。
+- **`lc_tools.py` — `LC_Tools`**：LangChain `@tool` 工具（当前：时间日期、关键词搜索、URL 抓取转纯文本）。
   - 工具内**异常不外抛**（返回字符串让模型看到失败原因），HTTP 请求必须带 `timeout`（当前 20s）。
-  - HTML → 纯文本用标准库 `HTMLParser`（不用正则），保留绝对化链接，返回上限 128000 字符。
-  - `http_request_get_with_keyword` 先拼 Bing URL，再通过 `.func` 复用 URL 抓取逻辑（避免二次 `@tool` 包装）。
+  - `http_request_get_with_keyword` 的流水线固定四段，顺序不可换：**查表拼 URL**（`HTML_Utils.WEB_SEARCH_ENTRY[engine]`，`{keyword}` 由 `quote` 填）→ **`requests.get`**（UA / `timeout` / 代理，配置读 `app_util_profile`）→ **反爬拦截**（按引擎分派）→ **`http_content_format_keyword_<engine>`** 解析成 Markdown 编号列表。工具只负责"取"，URL 处理与 DOM 抽取全在 `HTML_Utils`。
+  - **DuckDuckGo 反爬页**（HTTP 202 + `challenge-form` / `anomaly.js` / `anomaly-modal` 标记）在解析前由 `HTML_Utils.antibot_check_ddg` 拦下：返回 `请求失败: DuckDuckGo 返回反爬验证页 ...`（仍是普通字符串，不抛异常），并 `logger.warning` 记录状态码 / 最终 URL / 原始内容前 4000 字符。
+  - **零结果**（SERP 结构一个条目都没命中）统一走 `HTML_Utils.handle_keyword_no_result`：`logger.warning` 记原始内容（`RAW_LOG_MAX_CHARS = 4000`），返回 `未获取到搜索结果: 页面结构未匹配 ...`，不再静默回退通用抽取（骨架文本对模型是纯噪声）。
+  - `http_request_get_with_url` 只走 `http_content_format_url` 通用正文抽取；HTML → 纯文本用 `BeautifulSoup`（不用正则），保留绝对化链接，返回上限取 `web_search_max_length()`（默认 128000 字符）。
+
+### 搜索引擎的分层归类（新增引擎照此命名）
+
+一个引擎在 `HTML_Utils` 里对应一组**同一后缀**的成员；`<engine>` 取 `WEB_SEARCH_ENTRY` 的键（小写，工具内 `strip().lower()` 归一化后再查表）。命名风格为**主体在前、引擎后缀收尾**，与 `build_blk_*` / `callback_*` 的 Subject-First 一致：新增引擎只是往同名层里加一行，不需要另起命名体系。
+
+| 层 | 成员（以 `duckduckgo` 为例） | 职责 | 何时必需 |
+|---|---|---|---|
+| 入口 | `WEB_SEARCH_ENTRY["duckduckgo"]` | SERP URL 模板，`{keyword}` 占位 | 必需 |
+| 链接还原 | `unwrap_redirect_ddg(url)` | 解 SERP 跳转链（Bing base64 / DDG `uddg`），解不出原样返回 | 仅 SERP 包跳转时 |
+| 反爬 | `ANTIBOT_MARKERS_DDG` + `antibot_check_ddg(content, status_code)` | 挑战页特征常量 + 判定；**状态码与 body 双判**（中转代理可能改写状态码） | 仅该引擎会反爬时 |
+| 解析 | `http_content_format_keyword_ddg(content, base_url)` | SERP → Markdown 编号列表 | 必需 |
+
+- **反爬必须先于解析**：挑战页里没有结果条目，一旦让解析层兜底就只剩页面骨架——DDG 的说明文字全在 `<form id="challenge-form">` 内，会被 `SKIP_TAGS` 连表单一起丢掉（现场症状：工具输出只有两行 `DuckDuckGo`）。
+- **零结果兜底只有一份**：各引擎解析出 0 条时一律调 `handle_keyword_no_result(engine, ...)`，不要再写"回退通用抽取"。
+- **分层判据**：引擎私有的才带 `<engine>` 后缀；跨引擎共用（`RAW_LOG_MAX_CHARS` / `WEB_SEARCH_ENGINE_DEFAULT` / `handle_keyword_no_result`）保持无后缀，避免退化成"每个引擎一套"。常量用大写缩写引擎名（`ANTIBOT_MARKERS_DDG`），函数用 `WEB_SEARCH_ENTRY` 的键（`antibot_check_ddg`）——同一引擎两种写法并存不是笔误。
+- **新增引擎清单**（漏一项就少一层防护）：`WEB_SEARCH_ENTRY` 键 → `http_content_format_keyword_<engine>` → `antibot_check_<engine>` + `ANTIBOT_MARKERS_<ENGINE>` + 工具层反爬分支（命中即 `return "请求失败: ... 反爬验证页"`）→ 必要时 `unwrap_redirect_<engine>` → `EndPoints.runtime["web_search_engine"]` 下拉选项。
+- 测试：`tests/test_lc_tools_web_search.py`（离线，覆盖反爬判定 / 正常结果解析 / 零结果日志截断）。
 
 ## 工具层（`src/utils/`）
 
@@ -425,6 +445,9 @@ ft.PopupMenuButton(
 - Markdown 把单个 `\n` 当软换行折叠成空格；用户输入的换行必须走 `MessageUtilsCommon.format_user_msg_markdown`（行尾补两个空格），或改用 `ft.Text(selectable=True)`。
 - 围栏代码块（三反引号 / 三波浪线）内部原样渲染，不要补硬换行。
 - `ft.Markdown` 会把 `<...>` 当 HTML 吞掉，错误详情这类原始文本用 `ft.Text`。
+- `code_theme` 是**整张替换**、不是覆盖预设：Dart 侧 `parseMarkdownCodeTheme` 把传进来的 map 原样交给 `HighlightView`，缺失的 token 拿不到 style（回落根样式）→ 哪怕只微调一个 token（如 diff 的 `addition`/`deletion`）也得把整张调色板抄全。现用 `MessageUtilsCommon.format_markdown_code_theme()`（Gist 调色板 + 半透明 diff 底色）。
+- 自定义主题**必须显式给 `root`**（`bgcolor` 白底 + `#333333` 字）：flet 自带的 `lib/src/controls/highlight_view.dart` 在 `root` 缺失时回落 `colorScheme.surfaceContainerHighest`（灰底）/ `onSurfaceVariant`（灰字），不是白底黑字 → 代码块整块变灰。别用「pub 上 flutter_highlight 回落白底」的结论套 flet 这份 patched 实现。
+- 代码块里 span 的 `bgcolor` 必须带 alpha：`TextSpan` 底色画在 Flutter 文本选中高亮**之上**，不透明底色会让 diff 增删行选中后完全看不出选中（`#1A55A532` ≈ 10%）。
 
 ### 滚动列里的 `expand`
 
@@ -620,7 +643,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 | `src/utils/` | 工具层（config / cache / data / i18n / logging） |
 | `src/locales/*.yaml` | 扁平 key-value 翻译文件（en, zh_cn） |
 | `src/assets/` | 各平台应用图标 `icon.png`，由 `[tool.flet]` 打包使用 |
-| `tests/` | `test_lc_hotfix_openai.py`（纯离线，14 项）；**被 .gitignore 忽略** |
+| `tests/` | `test_lc_hotfix_openai.py`（14 项）+ `test_lc_tools_web_search.py`（8 项），纯离线；**被 .gitignore 忽略** |
 | `storage/conf/` | **回退位置**：`FLET_APP_STORAGE_DATA` 缺失时 config.yaml / profile.yaml 落这里；正常 dev（`flet run`）数据在 `src/.flet/storage/data/`，运行时自动生成 |
 | `storage/data/` | **回退位置**：`sort_chat.yaml` / `sort_agent.yaml`（预留给 agent）/ `tmp_msgs_state.yaml` / `checkpointer.db` |
 | `storage/temp/` | **回退位置**：`clipboard/` 剪切板截图临时文件（正常 dev 走 `src/.flet/storage/temp/`） |
@@ -645,7 +668,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 
 ## 杂项
 
-- **无 lint / typecheck 工具链**；测试用 pytest（`[tool.pytest.ini_options]`），当前仅 `tests/test_lc_hotfix_openai.py`。
+- **无 lint / typecheck 工具链**；测试用 pytest（`[tool.pytest.ini_options]`），当前 `tests/test_lc_hotfix_openai.py` + `tests/test_lc_tools_web_search.py`。
 - 键盘事件在 `src/main.py`：`Shift+Enter` 发送（仅当发送按钮为 `SEND` 图标）、`Ctrl+V` 粘贴剪贴板图片；两者目前都只认 `session_id_chat_current`，agent 接入时需放宽。
 - `.gitignore` 忽略 `storage/`、`tests/`、`.flet/`、`build/`、`.idea/`、`.vscode/`。
 - ⛔ **不要在已有代码仓库里跑 `flet create .`**：它会覆盖 `src/main.py` 与 `.gitignore`。

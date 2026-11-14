@@ -71,7 +71,7 @@ class EndPoints:
     # 运行时的全局变量
     runtime = {
         # 应用运行时的根目录
-        # 注意: 语义为 main.py 所在目录 (dev = <repo>/src, 打包后 = bundle 根),
+        # 注意: 语义为 main.py 所在目录 (dev = <repo>/src, 打包后 = bundle 根)
         # 只用于定位只读资源 (如 locales/); 可写文件走 app_path_data / app_path_temp
         "app_path_root": None,
         # 可写数据目录 (config.yaml / profile.yaml / sort_*.yaml / tmp_msgs_state.yaml / checkpointer.db)

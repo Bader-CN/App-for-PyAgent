@@ -103,6 +103,18 @@ class LC_Tools:
         if not any(kind in ctype for kind in ("html", "xml", "json", "text")):
             return f"该 URL 返回非文本内容 (Content-Type: {ctype}), 无法作为文本阅读"
 
+        # DDG 反爬页必须在解析前拦下: 挑战页没有结果条目, 会一路降级成只剩 "DuckDuckGo" 的页面骨架,
+        # 模型拿到这种"结果"只会继续瞎猜。对模型按失败处理(普通字符串返回), 日志留原始内容便于排查
+        if engine == "duckduckgo" and HTML_Utils.antibot_check_ddg(res.text, res.status_code):
+            logger.warning(
+                f"duckduckgo anti-bot challenge page: url={res.url}, "
+                f"status={res.status_code}, length={len(res.text)}\n"
+                f"--- raw content (first {HTML_Utils.RAW_LOG_MAX_CHARS} chars) ---\n"
+                f"{res.text[:HTML_Utils.RAW_LOG_MAX_CHARS]}\n"
+                f"--- end raw content ---"
+            )
+            return f"请求失败: DuckDuckGo 返回反爬验证页 (HTTP {res.status_code}), 请稍后重试或改用其他关键词"
+
         # 内容处理全部在 HTML_Utils, 本工具只负责"取":
         # base_url 传 res.url(重定向后的最终地址), 而非请求时的原始 URL
         if engine == "duckduckgo":
@@ -189,6 +201,14 @@ class HTML_Utils:
     }
     # 配置缺失 / 引擎名不认识时的回退项: 必应对纯 HTTP 客户端最稳
     WEB_SEARCH_ENGINE_DEFAULT = "bing"
+    # 零结果 / 反爬时写日志的原始内容上限: 结果页 HTML 常有 20~100KB, 全量会撑爆单条日志
+    RAW_LOG_MAX_CHARS = 4000
+    # DDG 反爬挑战页特征: 202 之外再按 body 兜底(状态码可能被中转代理改写)
+    ANTIBOT_MARKERS_DDG = (
+        'id="challenge-form"',
+        "anomaly.js",
+        'data-testid="anomaly-modal"',
+    )
     # 整块丢弃: 脚本/样式是纯噪声, nav/footer 等是页面骨架而非正文
     SKIP_TAGS = {
         "script", "style", "noscript", "svg", "template", "iframe",
@@ -200,6 +220,39 @@ class HTML_Utils:
         "tr", "table", "thead", "tbody", "dl", "dt", "dd", "section", "article",
         "blockquote", "pre", "hr", "figcaption", "main",
     }
+    @staticmethod
+    def antibot_check_ddg(http_content, status_code=None):
+        """
+        判断 DuckDuckGo 返回的是否为反爬挑战页
+
+        DDG lite 判定请求为 bot 时会返回 HTTP 202 + 人机验证页, 202 属于 2xx,
+        requests 的 raise_for_status 不会拦; 若当成正常结果页解析, 只会得到页面骨架。
+        状态码可能被中转代理改写, 因此再按 body 特征兜底。
+        """
+        if status_code == 202:
+            return True
+        return any(marker in http_content for marker in HTML_Utils.ANTIBOT_MARKERS_DDG)
+
+    @staticmethod
+    def handle_keyword_no_result(engine, base_url, http_content):
+        """
+        关键字检索解析出 0 条结果: 写 warning 日志(含原始内容), 并返回给模型的说明
+
+        不再回退通用抽取: 反爬页 / 改版页的页面骨架对模型是纯噪声,
+        而原始内容已进日志, 事后仍能判断是"确实没结果"还是"抓错了页"。
+        """
+        logger.warning(
+            f"web search returned no results: engine={engine}, "
+            f"url={base_url}, length={len(http_content)}\n"
+            f"--- raw content (first {HTML_Utils.RAW_LOG_MAX_CHARS} chars) ---\n"
+            f"{http_content[:HTML_Utils.RAW_LOG_MAX_CHARS]}\n"
+            f"--- end raw content ---"
+        )
+        return (
+            f"未获取到搜索结果: 页面结构未匹配 "
+            f"(engine={engine}, length={len(http_content)}), 请改用其他关键词"
+        )
+
     @staticmethod
     def collapse_whitespace(text):
         """
@@ -259,13 +312,12 @@ class HTML_Utils:
 
         针对必应搜索结果页 (SERP) 做定向抽取: 每个 li.b_algo 提取标题 / 真实 URL / 摘要
         输出 Markdown 编号列表 (相比通用正文抽取, 结果更干净、token 更省)
-        若一个结果都没命中 (必应改版或验证页), 回退到通用抽取兜底, 避免返回空
+        若一个结果都没命中 (必应改版或验证页), 写 warning 日志并返回明确的空结果说明
         """
         soup = BeautifulSoup(http_content, "html.parser")
         items = soup.select("ol#b_results > li.b_algo")
         if not items:
-            # 结构没命中不等于抓到了垃圾页: 退回通用抽取, 让模型至少能看到页面内容
-            return HTML_Utils.http_content_format_url(http_content, base_url)
+            return HTML_Utils.handle_keyword_no_result("bing", base_url, http_content)
 
         lines = []
         for i, li in enumerate(items, start=1):
@@ -284,7 +336,7 @@ class HTML_Utils:
             lines.append(line)
 
         if not lines:
-            return HTML_Utils.http_content_format_url(http_content, base_url)
+            return HTML_Utils.handle_keyword_no_result("bing", base_url, http_content)
         return "\n\n".join(lines)
 
     @staticmethod
@@ -294,13 +346,12 @@ class HTML_Utils:
 
         针对 DDG lite 结果页做定向抽取: a.result-link 取标题与真实 URL,
         摘要在相邻的 td.result-snippet。输出 Markdown 编号列表。
-        若一个结果都没命中(改版或反爬页), 回退到通用抽取兜底, 避免返回空。
+        若一个结果都没命中(改版或反爬页), 写 warning 日志并返回明确的空结果说明。
         """
         soup = BeautifulSoup(http_content, "html.parser")
         links = soup.select("a.result-link")
         if not links:
-            # 结构没命中不等于抓到了垃圾页: 退回通用抽取, 让模型至少能看到页面内容
-            return HTML_Utils.http_content_format_url(http_content, base_url)
+            return HTML_Utils.handle_keyword_no_result("duckduckgo", base_url, http_content)
 
         lines = []
         for i, a_tag in enumerate(links, start=1):
@@ -323,7 +374,7 @@ class HTML_Utils:
             lines.append(line)
 
         if not lines:
-            return HTML_Utils.http_content_format_url(http_content, base_url)
+            return HTML_Utils.handle_keyword_no_result("duckduckgo", base_url, http_content)
         return "\n\n".join(lines)
 
     @staticmethod

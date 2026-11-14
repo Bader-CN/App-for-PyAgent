@@ -255,6 +255,65 @@ class MessageUtilsCommon:
         )
 
     @classmethod
+    def format_markdown_theme_code(cls):
+        """
+        格式化 Markdown 代码块高亮主题 (Gist 调色板 + 半透明的 diff 增删底色)
+
+        Note:
+        - Flet 的 code_theme 是「整张替换」而不是「覆盖预设」: Dart 侧 parseMarkdownCodeTheme
+          把传进来的 map 原样交给 HighlightView, 缺失的 token 拿不到 style (回落 root 的纯文本色)
+          -> 想保留 GITHUB_GIST 的配色, 只能把整张调色板抄一遍
+          -> 取值来自 highlight.js 9.18 的 github-gist.css (即 GITHUB_GIST 的真实内容)
+        - addition / deletion 的底色必须带 alpha: TextSpan 的 backgroundColor 画在 Flutter
+          文本选中高亮之上, 不透明底色会让 diff 行选中后完全看不出选中色
+        - root 必须显式给白底 + #333333 字: flet 自带的 highlight_view.dart 在 root 缺失时
+          回落 colorScheme.surfaceContainerHighest (灰底) / onSurfaceVariant (灰字),
+          而不是白底黑字 -> 代码块整块变灰
+        """
+        # diff 增删行的底色不透明度: 0x1A ≈ 10%; 调大更醒目, 但会开始压住选中色
+        diff_alpha = "1A"
+        return ft.MarkdownCustomCodeTheme(
+            # 代码块容器本体: 与 Gist 预设逐值一致 (缺了就是灰底灰字)
+            root=ft.TextStyle(color="#333333", bgcolor="#FFFFFF"),
+            # 注释 / 元信息
+            comment=ft.TextStyle(color="#969896"),
+            meta=ft.TextStyle(color="#969896"),
+            # 变量 / 强调 / 引用
+            variable=ft.TextStyle(color="#DF5000"),
+            template_variable=ft.TextStyle(color="#DF5000"),
+            strong=ft.TextStyle(color="#DF5000"),
+            emphasis=ft.TextStyle(color="#DF5000"),
+            quote=ft.TextStyle(color="#DF5000"),
+            # 关键字 / 类型
+            keyword=ft.TextStyle(color="#D73A49"),
+            selector_tag=ft.TextStyle(color="#D73A49"),
+            type=ft.TextStyle(color="#D73A49"),
+            # 字面量 / 符号 / 属性
+            literal=ft.TextStyle(color="#0086B3"),
+            symbol=ft.TextStyle(color="#0086B3"),
+            bullet=ft.TextStyle(color="#0086B3"),
+            attribute=ft.TextStyle(color="#0086B3"),
+            # 小节 / 名称 / 标签
+            section=ft.TextStyle(color="#63A35C"),
+            name=ft.TextStyle(color="#63A35C"),
+            tag=ft.TextStyle(color="#333333"),
+            # 标题 / CSS 选择器
+            title=ft.TextStyle(color="#6F42C1"),
+            attr=ft.TextStyle(color="#6F42C1"),
+            selector_id=ft.TextStyle(color="#6F42C1"),
+            selector_class=ft.TextStyle(color="#6F42C1"),
+            selector_attr=ft.TextStyle(color="#6F42C1"),
+            selector_pseudo=ft.TextStyle(color="#6F42C1"),
+            link=ft.TextStyle(decoration=ft.TextDecoration.UNDERLINE),
+            # 数字 / 字符串
+            number=ft.TextStyle(color="#005CC5"),
+            string=ft.TextStyle(color="#032F62"),
+            # diff: 文字色沿用 Gist, 只把底色换成带 alpha 的
+            addition=ft.TextStyle(color="#55A532", bgcolor=f"#{diff_alpha}55A532"),
+            deletion=ft.TextStyle(color="#BD2C00", bgcolor=f"#{diff_alpha}BD2C00"),
+        )
+
+    @classmethod
     def format_markdown_style_text(cls):
         """
         格式化 markdown 样式文本
@@ -420,7 +479,9 @@ class MessageUtilsCommon:
                 sessions = chat_list.controls if chat_list is not None else None
                 for session in sessions or []:
                     if session.data.get("session_id") == chat_session_id:
-                        session.title = ft.Text(summary_title)
+                        # ft.TextOverflow.CLIP 多余内容裁剪掉
+                        # https://flet.dev/docs/types/textoverflow
+                        session.title = ft.Text(summary_title, size=12, max_lines=1, overflow=ft.TextOverflow.CLIP)
                         session.data["title"] = summary_title
                         chat_header = EndPoints.chat["chat_header"].current
                         if chat_session_id == EndPoints.runtime["session_id_chat_current"] and chat_header is not None:
@@ -535,7 +596,7 @@ class MessageBlockCommon:
                 value=text,
                 md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
                 code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-                code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                code_theme=MessageUtilsCommon.format_markdown_theme_code(),
                 extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                 soft_line_break=True,                               # 对齐 white-space: pre-line
                 selectable=True,
@@ -720,7 +781,7 @@ class MessageBlockCommon:
                         value=reasoning,
                         md_style_sheet=MessageUtilsCommon.format_markdown_style_reasoning(),
                         code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-                        code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                        code_theme=MessageUtilsCommon.format_markdown_theme_code(),
                         extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                         soft_line_break=True,                               # 对齐 white-space: pre-line
                         selectable=True,
@@ -825,7 +886,7 @@ class MessageBlockCommon:
             value=content,
             md_style_sheet=MessageUtilsCommon.format_markdown_style_tool_call(),
             code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-            code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+            code_theme=MessageUtilsCommon.format_markdown_theme_code(),
             extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
             soft_line_break=True,                               # 对齐 white-space: pre-line
             selectable=True,
@@ -857,7 +918,7 @@ class MessageBlockCommon:
                 value=text,
                 md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
                 code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-                code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                code_theme=MessageUtilsCommon.format_markdown_theme_code(),
                 extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                 soft_line_break=True,                               # 对齐 white-space: pre-line
                 selectable=True,
@@ -906,7 +967,7 @@ class MessageBlockCommon:
                     value=text,
                     md_style_sheet=MessageUtilsCommon.format_markdown_style_text(),
                     code_style_sheet=MessageUtilsCommon.format_markdown_style_code(),
-                    code_theme=ft.MarkdownCodeTheme.GITHUB_GIST,
+                    code_theme=MessageUtilsCommon.format_markdown_theme_code(),
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,   # 表格/删除线/任务列表/自动链接
                     soft_line_break=True,                               # 对齐 white-space: pre-line
                     selectable=True,
