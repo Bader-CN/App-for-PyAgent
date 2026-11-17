@@ -22,7 +22,7 @@ flet run src/main.py         # 演示
 
 - 入口 `src/main.py` → `ft.run(main)`；所有模块用**裸模块绝对导入** `from xxx import ...`（`endpoints` / `views.x` / `utils.x` 等）。原因：`flet build` 打包时 `src/` 就是应用根，bundle 里 `main.py` 与 `views/ components/ cores/ utils/ locales/` 同级，**不存在 `src` 包**。
 - `pyproject.toml` 是依赖与 Flet 配置的唯一来源：`[tool.flet.app] path = "src"` 指定应用目录（bundle 根 = `src/` 内容），dev 状态目录 `.flet/` 也生成在 `src/` 下。
-- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 41 项全部通过。
+- 测试：`.venv\Scripts\python.exe -m pytest tests/ -v`（仓库自带 `.venv`）或 `python -m pytest tests/ -v`；`[tool.pytest.ini_options].pythonpath = ["src"]`（裸导入要求 `src/` 在 `sys.path`），`asyncio_mode = "auto"`。当前 42 项全部通过。
 - **`tests/` 被 `.gitignore` 忽略**（与 `storage/` 一样），不受版本控制。
 - **LangChain OpenAI 的 `reasoning_content` 支持已内置于仓库**（`src/cores/lc_hotfix_openai.py`），无需再改 site-packages；README 里的手工 patch 是等价说明（README 的运行路径仍写作 `main.py`，已过时）。
 
@@ -204,6 +204,7 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
 3. 两条独立投影并发消费（共享同一个 pump）：
    - `astream.messages` → 每条 message 内再 `asyncio.gather(consume_reasoning, consume_tool_calls_args, consume_text)`
    - `astream.tool_calls` → `consume_tool_calls_output`（回填工具结果，**只允许订阅一次**）
+   - `consume_tool_calls_args` 结束前调 `_consume_tool_calls_finally`：拿 `.tool_calls` 的**最终列表**补齐「delta 投影里没有」的工具块（上游把 id/name 只放在 `content-block-start` 上、整条消息回放等情况下会整段丢失），保证界面首屏与库一致；正常流里是空转
 4. 每个消费者都：检查 `status in ("error", "aborted")` → `await astream.abort()`；维护 `is_current` / `is_synced`；只有两者同时成立才碰界面。
 5. `status` 状态机：`start` → `reasoning` / `tool_call` / `text` → `stop`（正常）或 `error` / `aborted`（异常 / 用户停止）。
 6. `msg_aborted_post_processing` **首个错误优先**：`status` 已是 `error` / `aborted` 时只 `abort()` 返回，避免多个消费者各渲染一个错误块。
@@ -315,8 +316,8 @@ diff 层按**对象身份**（`src is not dst`）判定单子字段变更，所�
   - `state_graph_chat_update` 构建 `MessagesState` + `noop` 节点的只读图；`state_graph_agent_update` 为空。
   - `session_delete` 先 `await setup()` 再 `adelete_thread`。
 - **`lc_hotfix_openai.py` — `HotfixChatOpenAI(ChatOpenAI)`**
-  - 只覆盖 `_convert_chunk_to_generation_chunk`，把流式 delta 的 `reasoning_content` 转成 `{"type": "reasoning", "reasoning": ..., "index": 0}` 块；同 delta 有正文时再追加 `{"type": "text", ...}`。
-  - `index: 0` 必需：否则每个 delta 各存一个 reasoning 块。
+  - 只覆盖 `_convert_chunk_to_generation_chunk`，把流式 delta 的 `reasoning_content` 转成 `{"type": "reasoning", "reasoning": ..., "index": REASONING_BLOCK_INDEX}` 块；同 delta 有正文时再追加 `{"type": "text", ...}`。
+  - 合并键 `REASONING_BLOCK_INDEX = "lc_reasoning_0"`：**不能用整数 `0`**（见下方「LangChain 注意事项」的撞桶说明）；`merge_lists` 只认 int 或 `lc_*` 字符串作合并键，故必须带 `lc_` 前缀。
   - 同一 delta 带 `tool_calls` 时不改写 content（否则 v3 管线走 Responses 分支，工具增量从事件流消失）。
   - 不要用 `init_chat_model` 注入子类：其私有表 + `lru_cache` 固定 `ChatOpenAI`。
 - **`lc_tools.py` — `LC_Tools`**：LangChain `@tool` 工具（当前：时间日期、关键词搜索、URL 抓取转纯文本）。
@@ -634,16 +635,21 @@ print(patch.to_message(), added, removed)     # 看有无 add/remove，还是只
 LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / `reasoning` / `reasoning_details`）。本项目**不改 site-packages**，而是在 `src/cores/lc_hotfix_openai.py` 用子类覆盖 `_convert_chunk_to_generation_chunk`（等效 README 的 Patch ①）。
 
 - **发送侧 Patch ② 已无需再做**：`langchain_openai` 的 `_get_request_payload` 会在出站时剔除 `reasoning` / `tool_call` / `invalid_tool_call` 块。
-- **必须带 `index: 0`**，否则长思考会在 checkpointer 里堆积多个 reasoning 块。
-- **同 delta 带 `tool_calls` 时跳过改写**，否则工具增量会从 v3 事件流消失。
-- **`astream.tool_calls` 的 `output` 类型随 langgraph 版本漂移**（已踩）：`call` 是 `ToolCallStream`，字段 `tool_call_id` / `tool_name` / `input` / `output` / `error` 稳定；但 `output` 在 1.2.14 是 `ToolMessage`，1.2.19 直接是**工具返回值**（本项目工具返回 `str`）。∴ 回填时匹配块一律用 `call.tool_call_id`，**不要读 `output.tool_call_id`**；`format_tool_msg_markdown` 已改为 `getattr(tool_msg, "content", tool_msg)` 兼容两种形态。
-- **`message.tool_calls` 的 `args` 随版本 + 网关实现漂移**（已踩两次）：1.6.9 给**已解析的 dict**（累计快照），1.7.x 给**本 chunk 的增量字符串片段**，部分网关则**每个 delta 重复下发同一份完整快照**。∴ ① 直接 `tgt[k] = v` 会把前面的参数丢掉（症状：参数只显示 `}`）；② 一律 `prev + v` 又会平方级重复（症状：同一段 JSON 在副标题里重复累积）。`consume_tool_calls_args` 现行规则：`str` 且 `v.startswith(prev_args)` ⇒ 视为快照、整体覆盖，否则拼接；`dict` 序列化后覆盖；统一用 JSON 文本存在 `aimsgs[*]["args"]`（`msg_aborted_save` / `build_blk_ai_tool_call` 都按这个口径取）。`name` / `id` 在后续 chunk 里可能是 `None`，不要覆盖首次拿到的值。
+- **思考块必须带合并键 `"lc_reasoning_0"`（`REASONING_BLOCK_INDEX`），不能用整数 `0`**：
+  - 作用：多段思考在累积成最终 `AIMessage` 时被 `merge_lists` 合并成一个块，否则每个 delta 各存一块（`merge_lists` 只认 int 或 `lc_*` 字符串作合并键，∴ 必须带 `lc_` 前缀）。
+  - 用整数 `0` 会与**同一条消息里第 1 个工具调用撞桶**：v3 桥（`langchain_core/language_models/_compat_bridge.py::chunks_to_events`）按块自带的 `index` 归桶，而 OpenAI 的 `tool_calls` index 从 `0` 开始。
+  - 撞桶后果（实测 langchain-core 1.8.1）：第 1 个工具调用拿不到自己的 `content-block-start`，而 `id` / `name` **只放在 start 上**（`tool-call-delta` 仅带 `args`）∴ 它的增量被整体丢弃 → `message.tool_calls` 里没有它 → `ChatBody.consume_tool_calls_args` 不建块 → **流式期间该工具块不显示，从会话列表重进（读库重渲染）才出现**；同时思考块被工具块顶掉（落库的 AIMessage 丢思考）。
+  - 该 bug 在 1.8.1 仍存在（上游 `_iter_protocol_blocks` 的桶键仍是裸 `index`，其 docstring 只把它列为「当前集成碰不到」的 fragility）。`REASONING_BLOCK_INDEX` 同时符合上游约定，故上游将来改成 `(块类型, index)` 也不会失效。
+- **同一 delta 同时带 `reasoning_content` 与 `tool_calls` 时，热修复跳过改写**：否则 content 变成 list，v3 管线走 Responses 分支，本 delta 的工具增量会从事件流消失（代价是丢掉这一小段思考，远小于工具流断掉的后果）。
+- **`astream.tool_calls` 需要 `ToolCallTransformer`**：langgraph 1.2.22 起它不再默认注册，`astream_events(version="v3")` 默认只有 `values` / `messages` / `lifecycle` / `subgraphs`。`langchain.agents.create_agent` 会自动注册（本项目走它），手写 `StateGraph.compile()` 必须显式 `transformers=[ToolCallTransformer]`，否则访问 `run.tool_calls` 抛 `AttributeError`。
+- **`astream.tool_calls` 的 `output` 形态**：`call` 是 `ToolCallStream`，稳定字段 `tool_call_id` / `tool_name` / `input` / `output` / `error`；`output` 实测 1.2.22 是 `ToolMessage`，但历史上出现过裸返回值。∴ 回填时匹配块一律用 `call.tool_call_id`，**不要读 `output.tool_call_id`**；`format_tool_msg_markdown` 用 `getattr(tool_msg, "content", tool_msg)` 兼容两种形态。
+- **`message.tool_calls` 的 `args`**：v3 的 `tool-call-delta` 只下发**本 chunk 的增量字符串片段**（已不再有 dict 形态，故 `consume_tool_calls_args` 只按 `str` 处理）；但部分网关**每个 delta 重复下发同一份完整快照**。∴ ① 直接赋值会丢掉前面的参数（症状：参数只显示 `}`）；② 一律 `prev + v` 又会平方级重复（症状：同一段 JSON 在副标题里重复累积）。现行规则：`v.startswith(prev_args)` ⇒ 视为快照、整体覆盖，否则拼接；统一用 JSON 文本存在 `aimsgs[*]["args"]`（`msg_aborted_save` / `build_blk_ai_tool_call` 都按这个口径取）。`name` / `id` 在后续 chunk 里可能是 `None`，不要覆盖首次拿到的值。
 - 已知遗留：content 变为 list 后，后续纯文本 delta 可能以裸字符串 append，应用侧读回时由 `MessageUtilsCommon.format_ai_msg_content` 归一化。
 - **v1 content block**：`reasoning` / `text` / `tool_call` 是当前读写的统一形状；写入中止消息时显式带 `response_metadata.output_version="v1"`，避免再次按 provider 规则翻译。
 - **`aupdate_state` 必须显式 `as_node="model"`**：checkpoint 的 `versions_seen` 可能同时有 model / tools，LangGraph 推断会抛 `InvalidUpdateError: Ambiguous update`。
 - **删除消息 / 删除最近一轮**：`{"messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES), *keep]}`，`keep` 恒为前缀；`REMOVE_ALL_MESSAGES` 的重设语义见 `callback_msg_retry` 注释（`callback_msg_delete` 同款）。
 - **中止补写**：`tool_calls=[]` 必须留空；复用半成品 AIMessage 的 `id` 才能原地替换。
-- 测试：`tests/test_lc_hotfix_openai.py`（离线，含 v3 契约与基线对照）。
+- 测试：`tests/test_lc_hotfix_openai.py`（离线，含 v3 契约、思考块撞桶回归与基线对照）。
 
 ## 目录结构
 
@@ -658,7 +664,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 | `src/utils/` | 工具层（config / cache / data / i18n / logging） |
 | `src/locales/*.yaml` | 扁平 key-value 翻译文件（en, zh_cn） |
 | `src/assets/` | 各平台应用图标 `icon.png`，由 `[tool.flet]` 打包使用 |
-| `tests/` | `test_lc_hotfix_openai.py`（14 项）+ `test_lc_tools_web_search.py`（27 项），纯离线；**被 .gitignore 忽略** |
+| `tests/` | `test_lc_hotfix_openai.py`（15 项）+ `test_lc_tools_web_search.py`（27 项），纯离线；**被 .gitignore 忽略** |
 | `storage/conf/` | **回退位置**：`FLET_APP_STORAGE_DATA` 缺失时 config.yaml / profile.yaml 落这里；正常 dev（`flet run`）数据在 `src/.flet/storage/data/`，运行时自动生成 |
 | `storage/data/` | **回退位置**：`sort_chat.yaml` / `sort_agent.yaml`（预留给 agent）/ `tmp_msgs_state.yaml` / `checkpointer.db` |
 | `storage/temp/` | **回退位置**：`clipboard/` 剪切板截图临时文件（正常 dev 走 `src/.flet/storage/temp/`） |
@@ -667,7 +673,7 @@ LangChain OpenAI 不支持 Non-standard response fields（`reasoning_content` / 
 
 Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖与打包配置统一在 `pyproject.toml`（`[project].dependencies` 运行依赖 / `[dependency-groups].dev` 开发依赖 / `[tool.flet]`），安装步骤见 [README.md](./README.md)。
 
-运行依赖：`flet` / `langchain` / `langchain-openai` / `langchain-ollama` / `langgraph` / `langgraph-checkpoint-sqlite` / `deepagents` / `PyYAML` / `loguru` / `pillow` / `requests` / `aiosqlite`。
+运行依赖：`flet` / `langchain` / `langchain-core`（直接 import，需显式声明下限）/ `langchain-openai` / `langchain-ollama` / `langgraph` / `langgraph-checkpoint-sqlite` / `deepagents` / `PyYAML` / `loguru` / `pillow` / `requests` / `aiosqlite` / `beautifulsoup4`。
 
 ## 当前缺口 / 已知问题
 
@@ -678,7 +684,7 @@ Python >= 3.13（与 `pyproject.toml` 的 `requires-python` 一致）。依赖�
 - `msg_update_stream` 正常结束分支直接取 `aimsgs[-1]`；模型没有产出任何块时会 `IndexError`。
 - `MessageUtilsCommon.msg_title_summary_chat` 要求 `last_user_msg` / `last_ai_msg` 同时存在，缺失时已改为 `logger.warning` + `return`（不再走 `UnboundLocalError` 被吞的旧路径）。防重入标记位 `EndPoints.tmp_title_summarizing` 的形状是**守卫/置位在 `try` 之外 + `finally` 复位**：守卫的 `return` 绝不能经过 `finally`（会清掉正在进行那一轮的标记位 → 并发重复总结），复位用 `pop(..., None)`。模型调用经 `asyncio.to_thread` 执行，之后的界面渲染留在主线程。且只在标题仍是 `new_session` 时才会被调用，删除不会把已有标题改回去。发送路径不读标题总结，所以「库里只剩一条 HumanMessage 仍能继续对话」是正常的（实测确认）。
 - `ProfileUtils.default_model` 对已删除的 provider 会 `AttributeError`（配置异常未做防御，符合当前策略）。
-- **打包版工具调用报 `'str' object has no attribute 'tool_call_id'`**（已修复：`tool_out.tool_call_id` → `call.tool_call_id`，见「LangChain 注意事项」）：根因是编译版跑的 langgraph 1.2.19 把 `ToolCallStream.output` 换成裸返回值。`.venv`（langchain_core 1.6.9 / langchain 1.4.4 / langgraph 1.2.14）与 `build/site-packages`（langchain_core 1.7.4 / langchain 1.4.8 / langgraph 1.2.19）仍不一致，dev 复现不了此类问题，需要注意。
+- **dev 与打包版的依赖必须同版本**：`pyproject.toml` 的 `>=` 下限就是 dev `.venv` 实测通过的版本（langchain 1.5.0 / langchain-core 1.8.1 / langchain-openai 1.8.0 / langgraph 1.2.22 / langgraph-checkpoint-sqlite 3.1.3 / deepagents 0.7.39）。历史上 dev 1.6.9 与打包版 1.7.4 并存，导致「流式工具块丢失」这类问题只在打包版复现；**改动依赖时先把 `.venv` 升到同一版本并跑通 `pytest`，再 `flet build`**。
 - README 的运行路径与手工 patch 说明已过时，以本文件 + `src/cores/lc_hotfix_openai.py` 为准。
 
 ## 杂项

@@ -120,10 +120,11 @@ class MessageUtilsCommon:
         2. 普通工具直接返回字符串
         3. 目前只支持 text 块; 图片 / 文件等后续再处理
            -> 不支持的块只在整条消息上汇总告警一次, 避免逐块刷屏
-        4. 入参不一定是 ToolMessage:
-           -> langgraph 1.2.14 的 ToolCallStream.output 是 ToolMessage
-           -> langgraph 1.2.19 起直接透传工具返回值 (本项目工具返回 str)
-           ∴ 有 .content 就用 .content, 否则把入参本身当内容, 两条路径都能渲染
+        4. 入参优先按 ToolMessage 处理, 但不假设一定是:
+           实测 langgraph 1.2.22 的 ToolCallStream.output 仍是 ToolMessage,
+           但历史上有过「直接透传工具返回值」的版本 (本项目工具返回 str),
+           且工具返回 Command 等形态时也会走这里
+           ∴ 有 .content 就用 .content, 否则把入参本身当内容, 两种形态都能渲染
 
         Args:
         - tool_msg: ToolMessage / 工具返回值 (str) / 内容块列表

@@ -11,12 +11,16 @@ dependencies = [
     # GUI 框架
     "flet>=1.0.5",
     # 智能体核心层: LangChain / LangGraph / DeepAgents
-    "langchain>=1.4.4",
-    "langchain-openai>=1.7.0",
+    # 版本下限 = 当前 dev 环境实测通过的版本; dev 与 `flet build` 必须一致
+    # (历史上 dev 1.6.9 / 打包 1.7.4 并存，导致流式工具块丢失这类问题只在打包版复现)
+    "langchain>=1.5.0",
+    # 直接 import langchain_core (lc_hotfix_openai / chat_body 依赖 v3 的 tool-call-delta 语义)
+    "langchain-core>=1.8.1",
+    "langchain-openai>=1.8.0",
     "langchain-ollama>=1.1.0",
-    "langgraph>=1.2.14",
-    "langgraph-checkpoint-sqlite>=3.1.1",
-    "deepagents>=0.7.23",
+    "langgraph>=1.2.22",
+    "langgraph-checkpoint-sqlite>=3.1.3",
+    "deepagents>=0.7.39",
     # 工具层 / 其它
     "PyYAML>=6.0.3",
     "loguru>=0.7.3",

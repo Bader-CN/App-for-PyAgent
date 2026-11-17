@@ -68,15 +68,10 @@ class ChatBody:
                 # -> 中止点可能落在参数生成的中途 -> 拼接结果不是合法 JSON
                 # -> 此时原样保留字符串
                 raw_args = msg.get("args") or ""
-                # args 可能是 dict (旧版本 langchain 直接给出已解析结果) 或 str (增量拼接的 JSON 文本)
-                # -> json.loads 只接受 str, 先分流, 避免 TypeError 被外层 except 吞掉
-                if isinstance(raw_args, dict):
+                try:
+                    args_parsed = json.loads(raw_args) if raw_args else {}
+                except json.JSONDecodeError:
                     args_parsed = raw_args
-                else:
-                    try:
-                        args_parsed = json.loads(raw_args) if raw_args else {}
-                    except json.JSONDecodeError:
-                        args_parsed = raw_args
                 content.append({
                     "type": "tool_call",
                     "id": msg.get("tool_call_id"),
@@ -437,11 +432,10 @@ class ChatBody:
 
                 # 获取 Tool Call 的结果
                 # -> call 是 langgraph 的 ToolCallStream, 稳定字段: tool_call_id / tool_name / input / output / error
-                # -> output 的类型随 langgraph 版本变化:
-                #    1.2.14 -> ToolMessage (有 .tool_call_id / .content)
-                #    1.2.19 -> 直接是工具返回值 (本项目工具返回 str)
-                #    ∴ 匹配块必须用 call.tool_call_id, 绝不能读 output.tool_call_id
-                #      (打包版报 'str' object has no attribute 'tool_call_id' 就是这个原因)
+                # -> output 的形态随版本/工具返回值变化 (实测 1.2.22 是 ToolMessage, 历史上也出现过裸返回值),
+                #    故内容统一交给 format_tool_msg_markdown 归一化
+                # -> 匹配块一律用 call.tool_call_id, **不要读 output.tool_call_id**:
+                #    output 不是消息时那种读法会抛 AttributeError ('str' object has no attribute ...)
                 tool_out = call.output
                 tool_err = call.error
 
@@ -538,23 +532,18 @@ class ChatBody:
                         for k, v in chunk.items():
                             if k == "type":
                                 continue
-                            # args 的形态随 langchain 版本变化 (已踩):
-                            # -> 1.6.9: message.tool_calls 给出的是**已解析的 dict** (累计到当前 chunk 的部分 JSON)
-                            # -> 1.7.x: 给出的是本 chunk 的**增量片段** (str)
-                            # ∴ 直接赋值会把前面积累的参数丢掉, 界面上只剩最后一个片段 (例如 "}")
-                            # -> str 默认拼接; dict 视为「当前完整快照」, 序列化后覆盖
+                            # args 是 v3 的 tool-call-delta 逐 chunk 下发的**增量片段** (str)
+                            # -> 直接赋值会把前面积累的参数丢掉, 界面上只剩最后一个片段 (例如 "}")
                             # -> 统一存成字符串 (JSON 文本), 与 msg_aborted_save / 历史渲染的预期一致
                             if k == "args":
-                                if isinstance(v, str):
-                                    prev_args = tgt_tool_msg.get("args")
-                                    prev_args = prev_args if isinstance(prev_args, str) else ""
-                                    # 部分网关/端点不是增量下发, 而是每个 delta 重复下发**完整快照**
-                                    # -> 此时 prev + v 会平方级膨胀, 界面上同一段 JSON 被反复累积
-                                    # -> 新片段以旧内容开头 => 判定为快照, 整体覆盖
-                                    # -> 真正的增量片段几乎不可能以「完整的旧文本」开头, 判别有效
-                                    tgt_tool_msg["args"] = v if v.startswith(prev_args) else prev_args + v
-                                elif v is not None:
-                                    tgt_tool_msg["args"] = json.dumps(v, ensure_ascii=False)
+                                if not isinstance(v, str) or not v:
+                                    continue
+                                prev_args = tgt_tool_msg.get("args") or ""
+                                # 部分网关/端点不是增量下发, 而是每个 delta 重复下发**完整快照**
+                                # -> 此时 prev + v 会平方级膨胀, 界面上同一段 JSON 被反复累积
+                                # -> 新片段以旧内容开头 => 判定为快照, 整体覆盖
+                                # -> 真正的增量片段几乎不可能以「完整的旧文本」开头, 判别有效
+                                tgt_tool_msg["args"] = v if v.startswith(prev_args) else prev_args + v
                                 continue
                             # name / id 在后续 chunk 里可能是 None, 不要覆盖首次拿到的值
                             if v is None:
@@ -593,8 +582,71 @@ class ChatBody:
                         except RuntimeError:
                             logger.warning(f"tool_call block is detached, fall back to page update. session_id={chat_session_id}")
                             EndPoints.root["page"].update()
+            # 收尾核对: 补齐「最终列表里有、delta 投影里没有」的工具调用
+            await cls.consume_tool_calls_finally(message=message, chat_session_id=chat_session_id, lc_run_id=lc_run_id)
         except Exception as e:
             await cls.msg_aborted_post_processing(chat_session_id=chat_session_id, astream=astream, e=e)
+
+    @classmethod
+    async def consume_tool_calls_finally(cls, message, chat_session_id, lc_run_id):
+        """
+        收尾核对: 最终工具调用列表里若还有 aimsgs 没有的调用, 在消息末尾补建消息块
+
+        Note:
+        1. .tool_calls 投影不保证覆盖全部工具调用, 以下两种情况它只有末尾的最终列表、没有增量 delta:
+           - 上游把工具调用的 id / name 只放在 content-block-start 上 (langchain-core >= 1.7), 该调用一旦拿不到自己的 start, 增量就被整体丢弃
+             现场的撞桶案例见 lc_hotfix_openai.py 的 REASONING_BLOCK_INDEX
+           - 模型侧走「整条消息回放」(langchain 的 message_to_events) / 不流式
+        2. 不补建的话, 这些工具块在流式期间永远不出现, 只能靠从会话列表重进 (读库重渲染) 补上
+           -> 症状: 界面与库不一致, 且用户以为调用没发生
+        3. 正常流里所有调用都已建块, 这里只是个空转的核对
+
+        Args:
+        - message:          astream.messages 中的单个 delta
+        - chat_session_id:  对应的会话ID
+        - lc_run_id:        langchain 运行时的唯一id
+        """
+        # 投影未正常收尾 (异常 / 泵被掐断): 不能拿它当最终列表, 交给外层收尾
+        projection = message.tool_calls
+        if not projection.done or projection.error is not None:
+            return
+        final_calls = await projection or []
+
+        # 判断会话状态的标记位 (口径同 consume_tool_calls_args)
+        is_current = chat_session_id == EndPoints.runtime["session_id_chat_current"]
+        is_synced = EndPoints.tmp_msgs[chat_session_id]["rendered_click_count"] == EndPoints.tmp_msgs[chat_session_id]["click_count"]
+        aimsgs = EndPoints.tmp_msgs[chat_session_id]["aimsgs"]
+
+        rebuilt = 0
+        for call in final_calls:
+            tool_call_id = call.get("id")
+            # 没有 id 无法与 ToolMessage / 历史渲染对齐, 补了也是孤儿块
+            if not tool_call_id:
+                continue
+            if any(msg["type"] == "tool_call" and msg["tool_call_id"] == tool_call_id for msg in aimsgs):
+                continue
+            # 最终列表里的 args 是**已解析的 dict** (_assemble_message 的输出),
+            # 统一存成 JSON 文本 (与 consume_tool_calls_args 同口径)
+            tgt_tool_msg = {
+                "type": "tool_call",
+                "tool_call_id": tool_call_id,
+                "lc_run_id": lc_run_id,
+                "id": tool_call_id,
+                "name": call.get("name"),
+                "args": json.dumps(call.get("args") or {}, ensure_ascii=False),
+            }
+            aimsgs.append(tgt_tool_msg)
+            if is_current and is_synced:
+                EndPoints.chat["chat_body"].current.content.controls.append(
+                    MessageBlockCommon.build_blk_ai_tool_call(args_dict=tgt_tool_msg, lc_run_id=lc_run_id)
+                )
+                rebuilt += 1
+        if rebuilt:
+            logger.warning(f"tool_call delta(s) missing, blocks rebuilt at message end: session_id={chat_session_id}, count={rebuilt}")
+            # 后续 text delta 依赖「状态切换」来新建块 -> 这里必须让状态停在 tool_call
+            # (否则 consume_text 会把 delta 追加到这条 tool_call 字典上 -> KeyError: 'text')
+            EndPoints.tmp_msgs[chat_session_id]["status"] = "tool_call"
+            EndPoints.root["page"].update()
 
     @classmethod
     async def consume_reasoning(cls, message, chat_session_id, lc_run_id, astream):
